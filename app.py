@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -17,23 +18,59 @@ st.caption("Análise de Testes de Software — PCE + AVL | CAD0001")
 # Sidebar: autenticação e modelo
 # ---------------------------------------------------------------------------
 st.sidebar.header("Configuração")
-st.sidebar.write("Secrets encontrados:", list(st.secrets.keys()))
 
-# A chave NÃO fica no código: vem dos Secrets do Streamlit (GEMINI_API_KEY).
-# Se não houver secret configurado, o usuário pode digitar a chave aqui.
-try:
-    secret_key = st.secrets.get("GEMINI_API_KEY", "")
-except Exception:
-    secret_key = ""
+# A chave NÃO fica no código: vem dos Secrets do Streamlit.
+NOMES_ACEITOS = {"gemini_api_key", "google_api_key", "gemini_key", "api_key"}
 
-if secret_key:
-    api_key = secret_key
+
+def _limpar(valor):
+    return str(valor).strip().strip("\"'").strip()
+
+
+def obter_chave_dos_secrets():
+    """Procura a chave nos Secrets (nível raiz ou dentro de seções) e nas
+    variáveis de ambiente. Retorna (chave, nomes_encontrados)."""
+    nomes_encontrados = []
+
+    try:
+        for nome in st.secrets:
+            valor = st.secrets[nome]
+            nomes_encontrados.append(str(nome))
+
+            if hasattr(valor, "items"):  # seção [alguma_secao]
+                for nome2, valor2 in valor.items():
+                    nomes_encontrados.append(f"{nome}.{nome2}")
+                    if str(nome2).lower() in NOMES_ACEITOS and _limpar(valor2):
+                        return _limpar(valor2), nomes_encontrados
+            elif str(nome).lower() in NOMES_ACEITOS and _limpar(valor):
+                return _limpar(valor), nomes_encontrados
+    except Exception:
+        pass
+
+    for nome_env in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        if _limpar(os.environ.get(nome_env, "")):
+            return _limpar(os.environ[nome_env]), nomes_encontrados
+
+    return "", nomes_encontrados
+
+
+api_key, nomes_secrets = obter_chave_dos_secrets()
+
+if api_key:
     st.sidebar.success("Chave carregada dos Secrets.")
 else:
+    st.sidebar.error(
+        "Nenhuma chave encontrada nos Secrets. Configure "
+        "GEMINI_API_KEY em Settings → Secrets, ou digite abaixo."
+    )
+    st.sidebar.caption(
+        "Secrets detectados (só os nomes): "
+        + (", ".join(nomes_secrets) if nomes_secrets else "nenhum")
+    )
     api_key = st.sidebar.text_input(
-        "Gemini API Key:",
+        "Gemini API Key (alternativa):",
         type="password",
-        help="Cole sua chave da Gemini API aqui. Não compartilhe essa chave."
+        help="Só é necessário se os Secrets não estiverem configurados."
     )
 
 fallback_models = [
