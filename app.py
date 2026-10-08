@@ -17,6 +17,7 @@ st.caption("Análise de Testes de Software — PCE + AVL | CAD0001")
 # Sidebar: autenticação e modelo
 # ---------------------------------------------------------------------------
 st.sidebar.header("Configuração")
+st.sidebar.write("Secrets encontrados:", list(st.secrets.keys()))
 
 # A chave NÃO fica no código: vem dos Secrets do Streamlit (GEMINI_API_KEY).
 # Se não houver secret configurado, o usuário pode digitar a chave aqui.
