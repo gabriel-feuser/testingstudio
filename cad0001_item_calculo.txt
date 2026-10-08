@@ -1,0 +1,222 @@
+#--------------------------------------------------------------------------#
+# Programa: CAD0001 - Cadastro Fictício com Cálculo Automático (1 para 1)
+# Padrão  : Informix-4GL / Framework Logix
+#--------------------------------------------------------------------------#
+
+DATABASE logix
+
+#--------------------------------------------------------------------------#
+# Definição de Estruturas de Dados (RECORDs)
+#--------------------------------------------------------------------------#
+DEFINE mr_item RECORD
+    cod_empresa     CHAR(02),
+    cod_item        INTEGER,
+    den_item        CHAR(40),
+    val_param1      DECIMAL(12,2),
+    val_param2      DECIMAL(12,2),
+    val_param3      DECIMAL(12,2),
+    val_calculado   DECIMAL(12,2)
+END RECORD
+
+#--------------------------------------------------------------------------#
+# Função Principal / Ponto de Entrada
+#--------------------------------------------------------------------------#
+FUNCTION cad0001_main()
+
+    # Inicializa variáveis
+    INITIALIZE mr_item.* TO NULL
+
+    # Executa o fluxo principal de menu
+    CALL cad0001_menu()
+
+END FUNCTION
+
+#--------------------------------------------------------------------------#
+# Função de Regra de Negócio: Cálculo Fictício
+# Retorno: valor calculado (>= 0) ou -1 quando algum parâmetro é negativo
+#--------------------------------------------------------------------------#
+FUNCTION cad0001_calcula_valor(p_val1, p_val2, p_val3)
+    DEFINE p_val1          DECIMAL(12,2),
+           p_val2          DECIMAL(12,2),
+           p_val3          DECIMAL(12,2),
+           l_val_calculado DECIMAL(12,2)
+
+    # Tratamento de valores nulos
+    IF p_val1 IS NULL THEN LET p_val1 = 0 END IF
+    IF p_val2 IS NULL THEN LET p_val2 = 0 END IF
+    IF p_val3 IS NULL THEN LET p_val3 = 0 END IF
+
+    # Regra de Negócio de Fronteira: valores não podem ser negativos (< 0.00)
+    IF p_val1 < 0 OR p_val2 < 0 OR p_val3 < 0 THEN
+        RETURN -1   # Código de Erro de Parâmetro Inválido
+    END IF
+
+    # Fórmula Fictícia: (Parametro1 * Parametro2) + Parametro3
+    LET l_val_calculado = (p_val1 * p_val2) + p_val3
+
+    RETURN l_val_calculado
+END FUNCTION
+
+#--------------------------------------------------------------------------#
+# Operação de INCLUSÃO (INSERT)
+#--------------------------------------------------------------------------#
+FUNCTION cad0001_incluir()
+
+    # 1. Efetua o cálculo fictício a ser gravado na tabela de valores
+    LET mr_item.val_calculado = cad0001_calcula_valor(mr_item.val_param1, 
+                                                     mr_item.val_param2, 
+                                                     mr_item.val_param3)
+
+    # Parâmetro inválido: não grava nada (o resultado válido é sempre >= 0)
+    IF mr_item.val_calculado = -1 THEN
+        MESSAGE "Parametros invalidos: os valores nao podem ser negativos."
+        RETURN FALSE
+    END IF
+
+    # 2. Início do bloco transacional
+    BEGIN WORK
+
+    # Inserção na Tabela 1: Cadastro principal
+    WHENEVER ERROR CONTINUE
+    INSERT INTO cad_item (
+        cod_empresa,
+        cod_item,
+        den_item,
+        val_param1,
+        val_param2,
+        val_param3
+    ) VALUES (
+        mr_item.cod_empresa,
+        mr_item.cod_item,
+        mr_item.den_item,
+        mr_item.val_param1,
+        mr_item.val_param2,
+        mr_item.val_param3
+    )
+    WHENEVER ERROR STOP
+
+    IF sqlca.sqlcode <> 0 THEN
+        ROLLBACK WORK
+        MESSAGE "Erro ao incluir na tabela cad_item. SQLCODE: ", sqlca.sqlcode
+        RETURN FALSE
+    END IF
+
+    # Inserção na Tabela 2: Valores (Relacionamento 1 para 1)
+    WHENEVER ERROR CONTINUE
+    INSERT INTO cad_item_calculo (
+        cod_empresa,
+        cod_item,
+        val_calculado
+    ) VALUES (
+        mr_item.cod_empresa,
+        mr_item.cod_item,
+        mr_item.val_calculado
+    )
+    WHENEVER ERROR STOP
+
+    IF sqlca.sqlcode <> 0 THEN
+        ROLLBACK WORK
+        MESSAGE "Erro ao incluir na tabela cad_item_calculo. SQLCODE: ", sqlca.sqlcode
+        RETURN FALSE
+    END IF
+
+    # Efetiva a transação
+    COMMIT WORK
+    MESSAGE "Registro e cálculo gravados com sucesso!"
+    RETURN TRUE
+
+END FUNCTION
+
+#--------------------------------------------------------------------------#
+# Operação de ALTERAÇÃO (UPDATE)
+#--------------------------------------------------------------------------#
+FUNCTION cad0001_alterar()
+
+    # Recalcula o valor com base nos novos parâmetros informados
+    LET mr_item.val_calculado = cad0001_calcula_valor(mr_item.val_param1, 
+                                                     mr_item.val_param2, 
+                                                     mr_item.val_param3)
+
+    # Parâmetro inválido: não altera nada (o resultado válido é sempre >= 0)
+    IF mr_item.val_calculado = -1 THEN
+        MESSAGE "Parametros invalidos: os valores nao podem ser negativos."
+        RETURN FALSE
+    END IF
+
+    BEGIN WORK
+
+    # Atualização na Tabela 1: Cadastro principal
+    WHENEVER ERROR CONTINUE
+    UPDATE cad_item
+       SET den_item   = mr_item.den_item,
+           val_param1 = mr_item.val_param1,
+           val_param2 = mr_item.val_param2,
+           val_param3 = mr_item.val_param3
+     WHERE cod_empresa = mr_item.cod_empresa
+       AND cod_item    = mr_item.cod_item
+    WHENEVER ERROR STOP
+
+    IF sqlca.sqlcode <> 0 THEN
+        ROLLBACK WORK
+        MESSAGE "Erro ao alterar tabela cad_item. SQLCODE: ", sqlca.sqlcode
+        RETURN FALSE
+    END IF
+
+    # Atualização na Tabela 2: Valores (Relação 1 para 1)
+    WHENEVER ERROR CONTINUE
+    UPDATE cad_item_calculo
+       SET val_calculado = mr_item.val_calculado
+     WHERE cod_empresa   = mr_item.cod_empresa
+       AND cod_item      = mr_item.cod_item
+    WHENEVER ERROR STOP
+
+    IF sqlca.sqlcode <> 0 THEN
+        ROLLBACK WORK
+        MESSAGE "Erro ao alterar tabela cad_item_calculo. SQLCODE: ", sqlca.sqlcode
+        RETURN FALSE
+    END IF
+
+    COMMIT WORK
+    MESSAGE "Registro alterado e cálculo reprocessado com sucesso!"
+    RETURN TRUE
+
+END FUNCTION
+
+#--------------------------------------------------------------------------#
+# Operação de EXCLUSÃO (DELETE)
+#--------------------------------------------------------------------------#
+FUNCTION cad0001_excluir()
+
+    BEGIN WORK
+
+    # Exclusão primeiro da tabela dependente (cad_item_calculo)
+    WHENEVER ERROR CONTINUE
+    DELETE FROM cad_item_calculo
+     WHERE cod_empresa = mr_item.cod_empresa
+       AND cod_item    = mr_item.cod_item
+    WHENEVER ERROR STOP
+
+    IF sqlca.sqlcode <> 0 THEN
+        ROLLBACK WORK
+        MESSAGE "Erro ao excluir da tabela cad_item_calculo. SQLCODE: ", sqlca.sqlcode
+        RETURN FALSE
+    END IF
+
+    # Exclusão da tabela principal (cad_item)
+    WHENEVER ERROR CONTINUE
+    DELETE FROM cad_item
+     WHERE cod_empresa = mr_item.cod_empresa
+       AND cod_item    = mr_item.cod_item
+    WHENEVER ERROR STOP
+
+    IF sqlca.sqlcode <> 0 THEN
+        ROLLBACK WORK
+        MESSAGE "Erro ao excluir da tabela cad_item. SQLCODE: ", sqlca.sqlcode
+        RETURN FALSE
+    END IF
+
+    COMMIT WORK
+    MESSAGE "Registro excluído das duas tabelas com sucesso!"
+    RETURN TRUE
+
+END FUNCTION
