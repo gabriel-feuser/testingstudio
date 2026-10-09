@@ -471,7 +471,7 @@ def node_label(node: Node, maxlen=34) -> str:
 def to_dot(cfg: CFG, covered_nodes=None, covered_edges=None) -> str:
     cn, ce = covered_nodes, covered_edges
     L = ['digraph G {', 'rankdir=TB;', 'bgcolor="transparent";',
-         'node [fontname="Helvetica", fontsize=11, penwidth=1.4];',
+         'node [fontname="Helvetica", fontsize=11, penwidth=1.4, fontcolor="#14213D", color="#5B6B85"];',
          'edge [fontname="Helvetica", fontsize=10];']
     for nid, nd in cfg.nodes.items():
         txt = node_label(nd).replace('"', "'")
@@ -485,7 +485,7 @@ def to_dot(cfg: CFG, covered_nodes=None, covered_edges=None) -> str:
             fill = "#C9D8F0" if covered else "#EEF2F8"
             L.append(f'N{nid} [shape=box, style="rounded,filled", fillcolor="{fill}", label="N{nid}\\n{txt}"];')
     for i, (s, d, l) in enumerate(cfg.edges):
-        col = {"V": "#0E7C66", "F": "#B8323F"}.get(l, "#5B6B85")
+        col = {"V": "#1FAE8E", "F": "#E5566A"}.get(l, "#8795AE")
         pen = 2.4 if (ce is not None and i in ce) else 1.2
         lab = f', label="{l}"' if l else ""
         L.append(f'N{s} -> N{d} [color="{col}", fontcolor="{col}", penwidth={pen}{lab}];')

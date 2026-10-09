@@ -26,16 +26,30 @@ st.markdown(
     """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+/* Cores que acompanham o tema ativo do Streamlit (claro ou escuro): o Streamlit
+   define color-scheme em .stApp e light-dark() escolhe o valor certo. */
 :root {
-  --ink: #14213D; --muted: #5B6B85; --line: #D9E1EE; --paper: #F7F9FC;
-  --ok: #0E7C66; --bad: #B8323F; --warn: #A86A00; --info: #2F5BA8;
+  --line: rgba(127,127,127,.32); --surface: rgba(127,127,127,.07);
+  --ok: light-dark(#0E7C66, #4FD6B4); --bad: light-dark(#B8323F, #FF8A95);
+  --warn: light-dark(#8A5A00, #F2BE5C); --info: light-dark(#2F5BA8, #8FB5FF);
+  --ok-bg: light-dark(#EAF5F2, rgba(79,214,180,.13));
+  --bad-bg: light-dark(#FBECEE, rgba(255,138,149,.13));
+  --warn-bg: light-dark(#FBF3E3, rgba(242,190,92,.13));
+  --info-bg: light-dark(#EBF0F9, rgba(143,181,255,.13));
+  --accent: light-dark(#178A74, #2BB596);
+}
+@supports not (color: light-dark(#000, #fff)) {
+  :root {
+    --ok: #0E7C66; --bad: #B8323F; --warn: #8A5A00; --info: #2F5BA8;
+    --ok-bg: #EAF5F2; --bad-bg: #FBECEE; --warn-bg: #FBF3E3; --info-bg: #EBF0F9; --accent: #178A74;
+  }
 }
 .stApp, [data-testid="stSidebar"] {
   font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 h1, h2, h3, h4 {
   font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif;
-  color: var(--ink); letter-spacing: -.01em;
+  color: inherit; letter-spacing: -.01em;
 }
 code, pre, textarea, [data-testid="stCode"] {
   font-family: 'IBM Plex Mono', ui-monospace, Consolas, monospace !important;
@@ -46,43 +60,50 @@ footer {visibility: hidden;}
 
 /* Cabeçalho com a régua de fronteira */
 .ts-head {display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
-          gap: 20px 40px; background: #fff; border: 1px solid var(--line);
+          gap: 20px 40px; background: var(--surface); border: 1px solid var(--line);
           border-radius: 10px; padding: 22px 28px; margin-bottom: 18px;}
-div.ts-head h1 {margin: 0 0 6px 0; padding: 0; font-size: 2.15rem; line-height: 1.1;}
-div.ts-head p {margin: 0; color: var(--muted); font-size: .98rem; max-width: 46ch;}
+div.ts-head h1 {margin: 0 0 6px 0; padding: 0; font-size: 2.15rem; line-height: 1.1; color: inherit;}
+div.ts-head p {margin: 0; color: inherit; opacity: .75; font-size: .98rem; max-width: 46ch;}
 .ts-ruler {position: relative; width: min(380px, 100%); height: 72px; flex: 0 1 380px;}
 .ts-track {position: absolute; left: 0; right: 0; top: 6px; height: 30px; display: flex;
            border: 1px solid var(--line); border-radius: 4px; overflow: hidden;}
-.ts-inv {flex: 1; background: repeating-linear-gradient(135deg, rgba(184,50,63,.24) 0 5px, rgba(184,50,63,.07) 5px 10px);}
-.ts-val {flex: 1; background-color: rgba(14,124,102,.10);
-         background-image: linear-gradient(90deg, rgba(14,124,102,.38) 1px, transparent 1px);
+.ts-inv {flex: 1; background: repeating-linear-gradient(135deg,
+         color-mix(in srgb, var(--bad) 30%, transparent) 0 5px,
+         color-mix(in srgb, var(--bad) 9%, transparent) 5px 10px);}
+.ts-val {flex: 1; background-color: color-mix(in srgb, var(--ok) 13%, transparent);
+         background-image: linear-gradient(90deg, color-mix(in srgb, var(--ok) 50%, transparent) 1px, transparent 1px);
          background-size: 10px 100%;}
 .ts-mark {position: absolute; top: 0; height: 42px; width: 2px; transform: translateX(-50%);}
 .ts-mark span {position: absolute; top: 46px; left: 50%; transform: translateX(-50%);
                font: 500 .8rem 'IBM Plex Mono', ui-monospace, monospace; white-space: nowrap;}
 .ts-mark.off {left: 36%; background: var(--bad); color: var(--bad);}
-.ts-mark.on  {left: 50%; width: 3px; background: var(--ink); color: var(--ink);}
+.ts-mark.on  {left: 50%; width: 3px; background: currentColor; color: inherit;}
 .ts-mark.in  {left: 64%; background: var(--ok); color: var(--ok);}
-.ts-zone {position: absolute; top: 46px; font-size: .74rem; color: var(--muted);}
+.ts-zone {position: absolute; top: 46px; font-size: .74rem; opacity: .7;}
 .ts-zone.l {left: 0;} .ts-zone.r {right: 0;}
 
 /* Avisos */
-.note {border-left: 3px solid var(--ok); background: #EAF5F2; padding: 10px 14px;
-       border-radius: 6px; color: #0B4F41; margin: 6px 0 14px 0; font-size: .93rem; line-height: 1.5;}
-.note.warn {border-color: var(--warn); background: #FBF3E3; color: #5C3A00;}
-.note.bad  {border-color: var(--bad);  background: #FBECEE; color: #6E1B24;}
-.note.info {border-color: var(--info); background: #EBF0F9; color: #1F3F78;}
+.note {border-left: 3px solid var(--ok); background: var(--ok-bg); padding: 10px 14px;
+       border-radius: 6px; color: inherit; margin: 6px 0 14px 0; font-size: .93rem; line-height: 1.5;}
+.note.warn {border-color: var(--warn); background: var(--warn-bg);}
+.note.bad  {border-color: var(--bad);  background: var(--bad-bg);}
+.note.info {border-color: var(--info); background: var(--info-bg);}
 
 /* Métricas, abas, botões, expansores */
-[data-testid="stMetric"] {background: #fff; border: 1px solid var(--line); border-radius: 8px;
+[data-testid="stMetric"] {background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
                           padding: 12px 16px; box-shadow: none;}
-[data-testid="stMetricLabel"] {color: var(--muted); font-size: .82rem;}
-[data-testid="stMetricValue"] {font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 500; color: var(--ink);}
-.stTabs [data-baseweb="tab-list"] {gap: 2px; border-bottom: 1px solid var(--line);}
-.stTabs [data-baseweb="tab"] {font-weight: 600; padding: 8px 14px; color: var(--muted);}
-.stTabs [aria-selected="true"] {color: var(--ink);}
-.stButton > button, .stDownloadButton > button {border-radius: 6px; font-weight: 600;}
-[data-testid="stExpander"] {border: 1px solid var(--line); border-radius: 8px; background: #fff;}
+[data-testid="stMetricLabel"] {opacity: .75; font-size: .82rem;}
+[data-testid="stMetricValue"] {font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 500; color: inherit;}
+.stTabs [data-baseweb="tab-list"] {gap: 2px;}
+.stTabs [data-baseweb="tab"] {font-weight: 600; padding: 8px 14px; color: inherit; opacity: .65;}
+.stTabs [data-baseweb="tab"][aria-selected="true"] {opacity: 1;}
+.stTabs [data-baseweb="tab-highlight"] {background-color: var(--accent) !important;}
+.stTabs [data-baseweb="tab-border"] {background-color: var(--line) !important;}
+.stButton > button, .stDownloadButton > button {border-radius: 6px; font-weight: 600; border-color: var(--line);}
+[data-testid="stBaseButton-primary"], button[kind="primary"] {background: var(--accent) !important;
+    border-color: var(--accent) !important; color: #fff !important;}
+[data-testid="stExpander"] {border: 1px solid var(--line); border-radius: 8px; background: transparent;}
+[data-testid="stExpander"] details, [data-testid="stExpander"] summary {background: transparent;}
 section[data-testid="stSidebar"] {border-right: 1px solid var(--line);}
 </style>
 """,
@@ -369,20 +390,19 @@ with tabs[1]:
             ordem = list(pts.sort_values("Valor")["Ponto"])
             base = alt.Chart(pts)
             linha = alt.Chart(pd.DataFrame({"x": [float(rule["c"])]})).mark_rule(
-                strokeDash=[6, 4], color="#14213D", size=2).encode(x="x:Q")
+                strokeDash=[6, 4], color="#8795AE", size=2).encode(x="x:Q")
             bolas = base.mark_circle(size=320).encode(
                 x=alt.X("Valor:Q", title="Valor de entrada"),
                 y=alt.Y("Ponto:N", sort=ordem, title=None),
                 color=alt.Color("Classe:N", scale=alt.Scale(domain=["Válida", "Inválida"],
-                                                            range=["#0E7C66", "#B8323F"])),
+                                                            range=["#1FAE8E", "#E5566A"])),
                 tooltip=["Ponto", "Valor", "Classe", "Esperado"])
-            textos = base.mark_text(dy=-20, fontSize=12, color="#14213D").encode(
+            textos = base.mark_text(dy=-20, fontSize=12, color="#8795AE").encode(
                 x="Valor:Q", y=alt.Y("Ponto:N", sort=ordem), text="Rótulo:N")
             st.altair_chart((linha + bolas + textos).properties(height=260, width="container")
                             .configure_view(stroke=None)
-                            .configure_axis(gridColor="#E6ECF5", domainColor="#B8C4D9", tickColor="#B8C4D9",
-                                            labelColor="#5B6B85", titleColor="#5B6B85", labelFontSize=12)
-                            .configure_legend(labelColor="#5B6B85", titleColor="#5B6B85"))
+                            .configure_axis(gridColor="rgba(127,127,127,0.22)", domainColor="rgba(127,127,127,0.5)",
+                                            tickColor="rgba(127,127,127,0.5)", labelFontSize=12))
             st.caption("Linha tracejada = fronteira. Verde = região válida · vermelho = região inválida.")
             tab = pts[["Ponto", "Valor", "Classe", "Esperado"]].copy()
             tab["Valor"] = tab["Valor"].map(lambda v: eg.fmt(D(str(v))))
