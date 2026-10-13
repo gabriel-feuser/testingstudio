@@ -55,7 +55,7 @@ code, pre, textarea, [data-testid="stCode"] {
   font-family: 'IBM Plex Mono', ui-monospace, Consolas, monospace !important;
 }
 textarea {font-size: .86rem !important; line-height: 1.5 !important;}
-.block-container {padding-top: 2rem; max-width: 1240px;}
+.block-container {padding-top: 5rem !important; max-width: 1240px;}
 footer {visibility: hidden;}
 
 /* Cabeçalho com a régua de fronteira */
@@ -93,7 +93,10 @@ div.ts-head p {margin: 0; color: inherit; opacity: .75; font-size: .98rem; max-w
 [data-testid="stMetric"] {background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
                           padding: 12px 16px; box-shadow: none;}
 [data-testid="stMetricLabel"] {opacity: .75; font-size: .82rem;}
-[data-testid="stMetricValue"] {font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 500; color: inherit;}
+[data-testid="stMetricValue"] {font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 500; color: inherit;
+                               font-size: 1.3rem;}
+[data-testid="stMetricValue"], [data-testid="stMetricValue"] > div {white-space: normal !important;
+                               overflow: visible !important; text-overflow: clip !important; overflow-wrap: anywhere;}
 .stTabs [data-baseweb="tab-list"] {gap: 2px;}
 .stTabs [data-baseweb="tab"] {font-weight: 600; padding: 8px 14px; color: inherit; opacity: .65;}
 .stTabs [data-baseweb="tab"][aria-selected="true"] {opacity: 1;}
@@ -203,8 +206,9 @@ modelos = list(dict.fromkeys(modelos))
 padrao = "gemini-3.6-flash" if "gemini-3.6-flash" in modelos else modelos[0]
 modelo = st.sidebar.selectbox("Modelo Gemini:", modelos, index=modelos.index(padrao))
 
-arquivo_up = st.sidebar.file_uploader("Analisar outro fonte (.txt)", type=["txt"],
-                                      help="Opcional. Por padrão o app lê cad0001_item_calculo.txt.")
+arquivo_up = st.sidebar.file_uploader("Analisar outro fonte (.txt, .4gl)", type=["txt", "4gl", "src", "prg"],
+                                      help="Envie o fonte que deseja testar. Sem envio, o app lê cad0001_item_calculo.txt.")
+slot_unit = st.sidebar.container()
 
 st.sidebar.markdown("---")
 st.sidebar.caption("Os cálculos desta ferramenta são determinísticos; o Gemini só gera pareceres opcionais.")
@@ -235,11 +239,16 @@ funcs = eg.split_functions(source)
 by_name = {f.name: f for f in funcs}
 
 
-def _executavel(f):
-    return bool(f.params) and eg.is_executable(eg.build_cfg(f, True))
-
-
-calc = by_name.get("cad0001_calcula_valor") or next((f for f in funcs if _executavel(f)), None)
+candidatas = [f for f in funcs if f.params]
+calc = None
+if candidatas:
+    nomes_c = [f.name for f in candidatas]
+    padrao_c = (next((n for n in nomes_c if n == "cad0001_calcula_valor"), None)
+                or next((f.name for f in candidatas if eg.is_testable(f)), nomes_c[0]))
+    escolhida = slot_unit.selectbox("Unidade sob teste (Módulo 1)", nomes_c, index=nomes_c.index(padrao_c),
+                                    key=f"unit_{h[:8]}",
+                                    help="Função analisada pelo Módulo 1 e usada para a cobertura e a mutação.")
+    calc = by_name[escolhida]
 
 # ---------------------------------------------------------------------------
 # IA opcional
@@ -268,27 +277,57 @@ def df_csv(df):
 
 
 def entrada_txt(args):
-    return "(" + "; ".join(eg.fmt(a) for a in args) + ")"
+    return "(" + "; ".join(eg.fmt_s(a, pscales[i] if i < len(pscales) else 2) for i, a in enumerate(args)) + ")"
 
 
 def tipo_icon(t):
     return ("🟢 " if t.startswith("Válida") else "🔴 ") + t
 
 
+def cls_icon(c):
+    return "🟢 " if c in ("Válida", "Ramo F") else "🔴 "
+
+
+def eps_txt(e):
+    return str(e).replace(".", ",")
+
+
+def br_num(x, nd=2):
+    return f"{x:,.{nd}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def esp_txt(v):
+    return "—" if v is None else eg.fmt_s(v, rscale)
+
+
 # ---------------------------------------------------------------------------
 # Dados do Módulo 1 (usados em várias abas)
 # ---------------------------------------------------------------------------
 suite, resultados, cfg_calc, ei, rule, rules, pce_rows = None, None, None, None, None, None, None
+escala, escalas, rscale, testavel, pscales = 2, {}, 2, False, []
+orc_key = nz_key = ""
+default_expr, orc_expr, orc_fn, orc_err = "", "", None, ""
 if calc:
-    prec, escala = eg.detect_decimal(calc, source)
-    ei = eg.epsilon_info(prec, escala)
+    tipo_k, prec, escala = eg.detect_type(calc, source)
+    ei = eg.epsilon_info(prec, escala, tipo_k)
     rules = eg.derive_rules(calc, ei["epsilon"])
     rule = rules[0]
-    pce_rows = eg.build_pce(calc, rule)
+    pce_rows = eg.build_pce(calc, rules)
     cfg_calc = eg.build_cfg(calc, True)
-    if len(calc.params) == 3 and eg.is_executable(cfg_calc):
-        suite = eg.build_suite(rule, ei["epsilon"], 3)
-        resultados = eg.run_suite(cfg_calc, suite, escala)
+    escalas, rscale = eg.func_scales(calc, escala), eg.result_scale(calc, escala)
+    pscales = [escalas.get(p, escala) for p in calc.params]
+    testavel = eg.is_testable(calc)
+    orc_key, nz_key = f"orc_{h[:8]}_{calc.name}", f"nz_{h[:8]}_{calc.name}"
+    default_expr = eg.default_oracle_expr(calc)
+    orc_expr = st.session_state.get(orc_key, default_expr)
+    if orc_expr.strip():
+        try:
+            orc_fn = eg.compile_oracle(orc_expr, calc.params, rscale, st.session_state.get(nz_key, True))
+        except ValueError as ex:
+            orc_err = str(ex)
+    if testavel:
+        suite = eg.build_suite(calc, rules, orc_fn)
+        resultados = eg.run_suite(cfg_calc, suite, escala, escalas, rscale)
 
 tabs = st.tabs([
     "Fonte",
@@ -304,7 +343,7 @@ tabs = st.tabs([
 with tabs[0]:
     st.subheader("Código-fonte analisado")
     st.caption(f"Arquivo: **{origem}** · o texto abaixo é editável — todas as abas analisam o que está na caixa. "
-               "Experimente remover a validação de negativos e veja os testes falharem.")
+               "Experimente alterar o código (por exemplo, remover uma validação) e veja a análise reagir.")
     st.text_area("Fonte (Informix-4GL)", key="src", height=380, label_visibility="collapsed")
     st.button("↺ Restaurar arquivo original", on_click=lambda: st.session_state.update(src=original))
 
@@ -318,7 +357,7 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("Módulo 1: Teste funcional (caixa-preta): PCE e AVL")
     if not calc:
-        note("Nenhuma função de cálculo executável encontrada para a análise de caixa-preta.", "warn")
+        note("Nenhuma função com parâmetros encontrada para a análise de caixa-preta.", "warn")
     else:
         st.caption(f"Unidade sob teste: `{calc.name}({', '.join(calc.params)})`")
         sub = st.tabs(["Relatório (PCE & AVL)", "Gráfico de Fronteira",
@@ -328,74 +367,99 @@ with tabs[1]:
         with sub[0]:
             st.markdown("#### Épsilon (ε) calculado a partir do tipo de dado")
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Tipo", f"DECIMAL({ei['precision']},{ei['scale']})")
-            c2.metric("Épsilon ε", eg.fmt(ei["epsilon"]))
+            c1.metric("Tipo", ei["label"])
+            c2.metric("Épsilon ε", eps_txt(ei["epsilon"]))
             c3.metric("Fórmula", f"10^-{ei['scale']}")
-            c4.metric("Máximo do tipo", f"{ei['max']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+            c4.metric("Máximo do tipo", br_num(ei["max"], 0 if ei["scale"] == 0 else 2))
+            unid = "1 centavo" if ei["scale"] == 2 else "a menor unidade do tipo"
             note(
-                f"<b>Por que ε = {eg.fmt(ei['epsilon'])}?</b> O dado tem {ei['scale']} casas decimais, então a menor "
-                f"variação fisicamente representável é 10<sup>-{ei['scale']}</sup> = {eg.fmt(ei['epsilon'])} (1 centavo). "
+                f"<b>Por que ε = {eps_txt(ei['epsilon'])}?</b> O dado tem {ei['scale']} casa(s) decimal(is), então a menor "
+                f"variação fisicamente representável é 10<sup>-{ei['scale']}</sup> = {eps_txt(ei['epsilon'])} ({unid}). "
                 "Um passo menor seria arredondado para o mesmo valor e não criaria um ponto de teste distinto; "
                 "um passo maior poderia saltar sobre o defeito de fronteira (operadores &lt; vs &lt;=).",
                 "info",
             )
-            if not rule["from_code"]:
-                note("<b>Atenção:</b> o código analisado <b>não contém a validação de valores negativos</b> esperada na "
-                     "especificação. A AVL abaixo usa a regra da especificação (fronteira em 0,00), mas a execução dos testes mostrará "
-                     "as falhas correspondentes.", "bad")
+            st.markdown("**ε por parâmetro** (cada fronteira usa o ε do tipo da variável comparada)")
+            st.dataframe(pd.DataFrame([{"Parâmetro": r["Parâmetro"], "Tipo": r["Tipo"],
+                                        "Casas decimais": r["Casas decimais"], "ε": eps_txt(r["ε"])}
+                                       for r in eg.param_eps_table(calc, escala)]), hide_index=True)
+            if rule["kind"] == "padrao":
+                note("<b>Possível defeito:</b> o código analisado não compara nenhum parâmetro com uma constante (por exemplo, "
+                     "não valida valores negativos). A AVL abaixo usa a fronteira padrão em 0,00, que é a regra de negócio "
+                     "esperada. A aba “Execução com oráculo” e a coluna “Obtido no código” do gráfico mostram o que o fonte, "
+                     "sem ser alterado, realmente devolve nesses pontos.", "bad")
+            if any(not eg.is_numeric_var(calc, p) for p in calc.params):
+                note("Há parâmetros não numéricos (CHAR, DATE...). A PCE e a AVL abaixo cobrem as fronteiras numéricas; "
+                     "os demais parâmetros precisam de classes definidas manualmente.", "warn")
 
             st.markdown("#### Particionamento em Classes de Equivalência (PCE)")
             df_pce = pd.DataFrame(pce_rows)
             df_pce["Tipo"] = df_pce["Tipo"].map(tipo_icon)
             st.dataframe(df_pce, hide_index=True)
             if any(r["Tipo"].startswith("Válida (tratada") for r in pce_rows):
-                note("<b>Divergência especificação × código:</b> a especificação lista valores nulos entre as classes inválidas, mas o "
-                     "código converte <code>NULL</code> em 0 antes de validar. Esta ferramenta segue o comportamento do "
-                     "código (nulo = válido). Confirme qual é a regra desejada.", "warn")
+                note("<b>Observação sobre NULL:</b> o código converte <code>NULL</code> em 0 antes de continuar. Esta ferramenta "
+                     "segue o comportamento do código (nulo = válido). Se a especificação trata nulo como inválido, isso é "
+                     "uma divergência a confirmar.", "warn")
 
             st.markdown("#### Análise do Valor Limite (AVL)")
             avl_rows = []
             for r in rules:
-                cond = f"{' / '.join(r['vars']) or 'x'} {r['op']} {eg.fmt(r['c'])}"
+                cond = f"{' / '.join(r['vars']) or 'x'} {r['op']} {eg.fmt_s(r['c'], r['scale'])}"
+                alvo = ", ".join(calc.params[i] for i in eg.rule_targets(calc, r))
+                tipo_f = {"validacao": f"Validação (retorna {r['err_code']})", "decisao": "Decisão (ramos V/F)",
+                          "padrao": "Padrão do laboratório"}[r["kind"]]
+                lado_v, lado_i = (("ramo F", "ramo V") if r["kind"] == "decisao" else ("região válida", "região inválida"))
                 just = {
                     "On": "Exatamente sobre a fronteira.",
-                    "Off": f"Primeiro valor do outro lado da fronteira (passo de ε = {eg.fmt(ei['epsilon'])}).",
-                    "Interior": "Profundamente dentro da região válida.",
-                    "Exterior": "Profundamente dentro da região inválida.",
+                    "Off": f"Primeiro valor do outro lado da fronteira (passo de ε = {eps_txt(r['eps'])}).",
+                    "Interior": f"Profundamente dentro da {lado_v}.",
+                    "Exterior": f"Profundamente dentro da {lado_i}.",
                 }
                 for p in r["points"]:
-                    avl_rows.append({"Entrada": "val_param1..3" if len(calc.params) == 3 else "parâmetros",
-                                     "Ponto": p["ponto"], "Valor de teste": eg.fmt(p["valor"]),
-                                     "Fronteira (inválido se)": cond,
-                                     "Classe": ("🟢 " if p["classe"] == "Válida" else "🔴 ") + p["classe"],
+                    avl_rows.append({"Entrada": alvo, "Ponto": p["ponto"], "Valor de teste": eg.fmt_s(p["valor"], r["scale"]),
+                                     "Fronteira": cond, "Tipo de fronteira": tipo_f,
+                                     "Classe": cls_icon(p["classe"]) + p["classe"],
                                      "Resultado esperado": p["esperado"], "Justificativa": just[p["ponto"]]})
             st.dataframe(pd.DataFrame(avl_rows), hide_index=True)
 
             if suite:
                 st.markdown("#### Casos de teste derivados")
                 df_ct = pd.DataFrame([{"ID": c["id"], "Técnica": c["tecnica"], "Descrição": c["descricao"],
-                                       "Entrada": entrada_txt(c["args"]), "Resultado esperado": eg.fmt(c["esperado"])}
+                                       "Entrada": entrada_txt(c["args"]), "Resultado esperado": esp_txt(c["esperado"])}
                                       for c in suite])
                 st.dataframe(df_ct, hide_index=True)
                 st.download_button("⬇️ Baixar casos de teste (CSV)", df_csv(df_ct), "casos_de_teste.csv", "text/csv")
-                st.caption("O resultado esperado vem de um **oráculo externo** (regra de negócio da especificação), "
-                           "nunca do próprio código-fonte.")
+                if orc_fn:
+                    st.caption("O resultado esperado vem de um **oráculo externo** (a regra de negócio que você definiu na aba "
+                               "“Execução com oráculo”), nunca do próprio código-fonte.")
+                else:
+                    st.caption("Resultado esperado em branco: defina o **oráculo** (regra de negócio) na aba “Execução com oráculo”.")
+            elif not testavel:
+                note("Os casos de teste não foram gerados porque a unidade não é executável pelo interpretador interno "
+                     "(usa SQL, CALL, texto ou outros comandos). A PCE e a AVL acima continuam valendo para elaborar os "
+                     "casos manualmente.", "info")
 
         # -- Gráfico ---------------------------------------------------------
         with sub[1]:
             st.markdown("#### Pontos de fronteira (AVL)")
+            rsel = rule
+            if len(rules) > 1:
+                opcoes = [f"{' / '.join(r['vars']) or 'x'} {r['op']} {eg.fmt_s(r['c'], r['scale'])}" for r in rules]
+                rsel = rules[opcoes.index(st.selectbox("Fronteira", opcoes, key="avl_rule"))]
             pts = pd.DataFrame([{"Ponto": p["ponto"], "Valor": float(p["valor"]), "Classe": p["classe"],
-                                 "Rótulo": f"{p['ponto']} ({eg.fmt(p['valor'])})", "Esperado": p["esperado"]}
-                                for p in rule["points"]])
+                                 "Rótulo": f"{p['ponto']} ({eg.fmt_s(p['valor'], rsel['scale'])})", "Esperado": p["esperado"]}
+                                for p in rsel["points"]])
             ordem = list(pts.sort_values("Valor")["Ponto"])
             base = alt.Chart(pts)
-            linha = alt.Chart(pd.DataFrame({"x": [float(rule["c"])]})).mark_rule(
+            linha = alt.Chart(pd.DataFrame({"x": [float(rsel["c"])]})).mark_rule(
                 strokeDash=[6, 4], color="#8795AE", size=2).encode(x="x:Q")
             bolas = base.mark_circle(size=320).encode(
                 x=alt.X("Valor:Q", title="Valor de entrada"),
                 y=alt.Y("Ponto:N", sort=ordem, title=None),
-                color=alt.Color("Classe:N", scale=alt.Scale(domain=["Válida", "Inválida"],
-                                                            range=["#1FAE8E", "#E5566A"])),
+                color=alt.Color("Classe:N", scale=alt.Scale(
+                    domain=[c for c in ["Válida", "Ramo F", "Inválida", "Ramo V"] if c in set(pts["Classe"])],
+                    range=[("#1FAE8E" if c in ("Válida", "Ramo F") else "#E5566A")
+                           for c in ["Válida", "Ramo F", "Inválida", "Ramo V"] if c in set(pts["Classe"])])),
                 tooltip=["Ponto", "Valor", "Classe", "Esperado"])
             textos = base.mark_text(dy=-20, fontSize=12, color="#8795AE").encode(
                 x="Valor:Q", y=alt.Y("Ponto:N", sort=ordem), text="Rótulo:N")
@@ -403,31 +467,65 @@ with tabs[1]:
                             .configure_view(stroke=None)
                             .configure_axis(gridColor="rgba(127,127,127,0.22)", domainColor="rgba(127,127,127,0.5)",
                                             tickColor="rgba(127,127,127,0.5)", labelFontSize=12))
-            st.caption("Linha tracejada = fronteira. Verde = região válida · vermelho = região inválida.")
+            st.caption("Linha tracejada = fronteira. Verde = região válida (ou ramo F) · vermelho = região inválida (ou ramo V).")
             tab = pts[["Ponto", "Valor", "Classe", "Esperado"]].copy()
-            tab["Valor"] = tab["Valor"].map(lambda v: eg.fmt(D(str(v))))
+            if testavel and suite:
+                alvo_i = eg.rule_targets(calc, rsel)[0]
+
+                def obtido_no_ponto(v):
+                    a = list(suite[0]["args"])
+                    a[alvo_i] = D(str(v))
+                    try:
+                        return eg.fmt_s(eg.run_cfg(cfg_calc, a, escala, scales=escalas)["result"], rscale)
+                    except Exception:                     # noqa: BLE001
+                        return "erro"
+
+                tab[f"Obtido no código ({calc.params[alvo_i]})"] = [obtido_no_ponto(v) for v in pts["Valor"]]
+            tab["Valor"] = tab["Valor"].map(lambda v: eg.fmt_s(D(str(v)), rsel["scale"]))
             st.dataframe(tab, hide_index=True)
 
         # -- Execução --------------------------------------------------------
         with sub[2]:
+            st.markdown("#### Oráculo: resultado esperado (regra de negócio)")
+            a = calc.params
+            exemplo = f"-1 if {a[0]} < 0 else {a[0]}" + (f" * {a[1]}" if len(a) > 1 else "")
+            st.caption("O oráculo é a regra da **especificação**, nunca o código-fonte. Escreva-a como uma expressão "
+                       f"(sintaxe Python). Variáveis: `{', '.join(a)}` (ou `p1`…`p{len(a)}`). "
+                       "Operadores: `+ - * / %`, comparações, `and/or/not`, `A if condição else B`, `abs/min/max`.")
+            st.text_area("Expressão do oráculo", value=default_expr, key=orc_key, height=90,
+                         placeholder=f"Exemplo: {exemplo}", label_visibility="collapsed")
+            st.checkbox("Tratar NULL como 0 no oráculo (como o código faz)", value=True, key=nz_key)
+            if orc_err:
+                note(f"Oráculo inválido: {orc_err}", "bad")
+            elif not orc_fn:
+                note("Nenhum oráculo definido: os casos aparecem com o resultado <b>obtido</b>, mas sem aprovado/reprovado. "
+                     "Escreva a regra de negócio acima para validar o código.", "info")
+
             if not resultados:
-                note("A unidade não é executável pelo interpretador interno (usa SQL, CALL ou outros comandos).", "warn")
+                note("A unidade não é executável pelo interpretador interno (usa SQL, CALL, texto ou outros comandos).", "warn")
             else:
-                ok = sum(r["ok"] for r in resultados)
-                c1, c2, c3 = st.columns(3)
+                n_ok = sum(r["ok"] is True for r in resultados)
+                n_bad = sum(r["ok"] is False for r in resultados)
+                n_na = sum(r["ok"] is None for r in resultados)
+                c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Casos executados", len(resultados))
-                c2.metric("Passaram ✅", ok)
-                c3.metric("Falharam ❌", len(resultados) - ok)
-                if ok == len(resultados):
+                c2.metric("Passaram ✅", n_ok)
+                c3.metric("Falharam ❌", n_bad)
+                c4.metric("Sem oráculo", n_na)
+                if orc_fn and n_bad == 0:
                     note("Todos os casos de teste passaram: o código respeita o oráculo.")
-                else:
+                elif orc_fn:
+                    falhas = [r for r in resultados if r["ok"] is False]
+                    so_neg = all(any(isinstance(x, D) and x < 0 for x in r["args"]) for r in falhas)
+                    extra = (" Todas as falhas envolvem valores negativos: o código não os rejeita como a regra esperada "
+                             "exige (veja a coluna “Obtido”)." if so_neg else "")
                     note("Há falhas — os casos que não passam revelam onde o código diverge da regra de negócio "
-                         "(ex.: ausência da validação de valores negativos).", "bad")
+                         "(ex.: uma validação ausente)." + extra, "bad")
                 df_ex = pd.DataFrame([{
                     "ID": r["id"], "Técnica": r["tecnica"], "Entrada": entrada_txt(r["args"]),
-                    "Esperado (oráculo)": eg.fmt(r["esperado"]),
-                    "Obtido": eg.fmt(r["obtido"]) if not r["erro"] else r["erro"],
-                    "Resultado": "✅ passou" if r["ok"] else "❌ falhou",
+                    "Esperado (oráculo)": esp_txt(r["esperado"]),
+                    "Obtido": eg.fmt_s(r["obtido"], rscale) if not r["erro"] else r["erro"],
+                    "Resultado": {True: "✅ passou", False: "❌ falhou", None: "— sem oráculo"}[r["ok"]],
                     "Caminho no GFC": " → ".join(f"N{n}" for n in r["trace"])} for r in resultados])
                 st.dataframe(df_ex, hide_index=True)
 
@@ -441,22 +539,27 @@ with tabs[1]:
                 k2.metric("Todas-arestas", f"{len(ce)}/{total_arestas}",
                           f"{len(ce) / total_arestas * 100:.0f}%")
 
-                st.markdown("**Oráculos de asserção:** a suíte como código executável")
                 linhas_as = ["from decimal import Decimal as D", "", "# oráculo = regra de negócio externa, não o código-fonte"]
                 for c in suite:
-                    args = ", ".join("None" if a is None else f"D('{a}')" for a in c["args"])
-                    linhas_as.append(f"assert cad0001_calcula_valor({args}) == D('{c['esperado']}'), \"{c['id']}: {c['descricao']}\"")
-                st.code("\n".join(linhas_as), language="python")
+                    if c["esperado"] is None:
+                        continue
+                    args = ", ".join("None" if x is None else f"D('{x}')" for x in c["args"])
+                    linhas_as.append(f"assert {calc.name}({args}) == D('{c['esperado']}'), \"{c['id']}: {c['descricao']}\"")
+                if len(linhas_as) > 3:
+                    st.markdown("**Oráculos de asserção:** a suíte como código executável")
+                    st.code("\n".join(linhas_as), language="python")
 
         # -- IA --------------------------------------------------------------
         with sub[3]:
-            ctx = (f"Épsilon calculado: {ei['epsilon']} (DECIMAL({ei['precision']},{ei['scale']})).\n"
+            ctx = (f"Épsilon calculado: {ei['epsilon']} ({ei['label']}).\n"
                    f"Fronteiras encontradas no código: {[(r['op'], str(r['c']), r['vars']) for r in rules]} "
                    f"(derivadas do código: {rule['from_code']}).\n"
                    "PCE:\n" + pd.DataFrame(pce_rows).to_csv(index=False))
+            if orc_fn:
+                ctx += f"\nOráculo definido pelo testador: {orc_expr}\n"
             if resultados:
                 ctx += "\nResultado da execução da suíte:\n" + "\n".join(
-                    f"{r['id']} {entrada_txt(r['args'])} esperado={eg.fmt(r['esperado'])} obtido={eg.fmt(r['obtido'])} ok={r['ok']}"
+                    f"{r['id']} {entrada_txt(r['args'])} esperado={esp_txt(r['esperado'])} obtido={eg.fmt(r['obtido'])} ok={r['ok']}"
                     for r in resultados)
             parecer_ia("m1", f"""Você é um analista de testes de software. Revise a análise de caixa-preta (PCE + AVL)
 abaixo, calculada por uma ferramenta determinística. Aponte lacunas, divergências entre a especificação e o código
@@ -498,7 +601,11 @@ with tabs[2]:
              f"— {eg.complexity_level(mc['V_EN'])}.")
     else:
         note("As três fórmulas divergiram — verifique se o fonte tem estruturas fora do subconjunto suportado "
-             "(GOTO, CASE, EXIT WHILE...).", "warn")
+             "(GOTO, EXIT/CONTINUE...).", "warn")
+    fluxo = eg.unsupported_flow(fsel)
+    if fluxo:
+        note("<b>Atenção:</b> o fonte usa " + ", ".join(f"<code>{x}</code>" for x in fluxo) + ", que esta ferramenta não "
+             "modela no GFC. O V(G) calculado pode estar subestimado: confira o grafo manualmente.", "warn")
 
     st.markdown("**As 3 fórmulas**")
     st.dataframe(pd.DataFrame([
@@ -624,10 +731,9 @@ Código:
 def mutacao_cached(fonte: str, fname: str, ids: tuple):
     fs = {f.name: f for f in eg.split_functions(fonte)}
     f = fs[fname]
-    pr, sc = eg.detect_decimal(f, fonte)
-    e = eg.epsilon_info(pr, sc)
-    r = eg.derive_rules(f, e["epsilon"])[0]
-    su = [c for c in eg.build_suite(r, e["epsilon"], 3) if c["id"] in ids]
+    kd, pr, sc = eg.detect_type(f, fonte)
+    e = eg.epsilon_info(pr, sc, kd)
+    su = [c for c in eg.build_suite(f, eg.derive_rules(f, e["epsilon"])) if c["id"] in ids]
     return eg.run_mutation(f, su, sc)
 
 
@@ -635,7 +741,7 @@ with tabs[4]:
     st.subheader("Módulo 3: Teste de mutação: quão boa é a sua suíte de testes?")
     st.caption("Injetamos defeitos propositais (mutantes) e verificamos se os testes “matam” cada um.")
     if not (calc and suite):
-        note("A mutação requer uma função executável com 3 parâmetros (como `cad0001_calcula_valor`).", "warn")
+        note("A mutação requer uma unidade executável pelo interpretador interno: parâmetros numéricos e comandos LET/RETURN/IF/laços (sem SQL, CALL ou texto).", "warn")
     else:
         modo = st.radio("Suíte de testes usada contra os mutantes",
                         ["Completa (PCE + AVL)", "Somente PCE", "Somente AVL", "Somente o caminho feliz", "Personalizada"],

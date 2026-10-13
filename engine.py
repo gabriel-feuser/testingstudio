@@ -10,6 +10,8 @@ O Gemini entra apenas como "parceiro de pareamento" (parecer opcional).
 """
 from __future__ import annotations
 
+import ast
+import operator
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal as D, ROUND_HALF_UP
@@ -32,6 +34,7 @@ STMT_KEYWORDS = {
 TYPE_WORDS = {
     "DECIMAL", "DEC", "NUMERIC", "MONEY", "INTEGER", "INT", "SMALLINT",
     "CHAR", "VARCHAR", "DATE", "FLOAT", "SMALLFLOAT", "DATETIME", "INTERVAL",
+    "SERIAL", "BIGINT", "INT8", "BIGSERIAL",
 }
 
 
@@ -152,6 +155,7 @@ def tokenize(lines):
     toks = []
     for ln in lines:
         s = re.sub(r"(?i)\bEND\s+IF\b", "ENDIF", ln)
+        s = re.sub(r"(?i)\bEND\s+CASE\b", "ENDCASE", s)
         s = re.sub(r"(?i)\bEND\s+(WHILE|FOREACH|FOR)\b", r"ENDLOOP", s)
         first = True
         while True:
@@ -175,10 +179,31 @@ def tokenize(lines):
                 toks.append(("ENDLOOP", ""))
                 s, first = s[7:], False
                 continue
+            if re.match(r"(?i)^ENDCASE\b", s):
+                toks.append(("ENDCASE", ""))
+                s, first = s[7:], False
+                continue
+            m = re.match(r"(?i)^CASE\b\s*(.*)$", s)
+            if m:
+                rest = m.group(1).strip()
+                if re.match(r"(?i)^WHEN\b", rest):
+                    toks.append(("CASE", ""))
+                    s, first = rest, False
+                    continue
+                toks.append(("CASE", rest))
+                break
+            m = re.match(r"(?i)^WHEN\b\s*(.*)$", s)
+            if m:
+                toks.append(("WHEN", m.group(1).strip()))
+                break
+            if re.match(r"(?i)^OTHERWISE\b", s):
+                toks.append(("OTHERWISE", ""))
+                s, first = s[9:], False
+                continue
             if re.match(r"(?i)^(WHILE|FOREACH|FOR)\b", s):
                 toks.append(("LOOP", s))
                 break
-            cut = re.search(r"(?i)\b(ELSE|ENDIF|ENDLOOP)\b", s)
+            cut = re.search(r"(?i)\b(ELSE|ENDIF|ENDLOOP|ENDCASE|WHEN|OTHERWISE)\b", s)
             chunk, s = (s[:cut.start()], s[cut.start():]) if cut else (s, "")
             chunk = chunk.strip()
             if not chunk:
@@ -306,8 +331,8 @@ class _Builder:
         depth = 1
         while self.i < len(self.toks) and depth:
             k = self.toks[self.i][0]
-            depth += k in ("IF", "LOOP")
-            depth -= k in ("ENDIF", "ENDLOOP")
+            depth += k in ("IF", "LOOP", "CASE")
+            depth -= k in ("ENDIF", "ENDLOOP", "ENDCASE")
             self.i += 1
 
     # -- parser recursivo ---------------------------------------------------
@@ -317,7 +342,7 @@ class _Builder:
             if kind in stops:
                 break
             self.i += 1
-            if kind in ("ELSE", "ENDIF", "ENDLOOP"):
+            if kind in ("ELSE", "ENDIF", "ENDLOOP", "ENDCASE", "WHEN", "OTHERWISE"):
                 continue
             if kind in ("STMT", "RETURN"):
                 pending = self.simple(pending, text, kind == "RETURN")
@@ -334,6 +359,24 @@ class _Builder:
                 if self.i < len(self.toks) and self.toks[self.i][0] == "ENDIF":
                     self.i += 1
                 pending = tp + fp
+            elif kind == "CASE":
+                if not pending:
+                    self.skip()
+                    continue
+                chain, ends = pending, []
+                while self.i < len(self.toks) and self.toks[self.i][0] == "WHEN":
+                    wtext = self.toks[self.i][1]
+                    self.i += 1
+                    entry, tp, fp = self.cond(f"{text} = {wtext}" if text else wtext)
+                    self.connect(chain, entry)
+                    ends += self.block(tp, {"WHEN", "OTHERWISE", "ENDCASE"})
+                    chain = fp
+                if self.i < len(self.toks) and self.toks[self.i][0] == "OTHERWISE":
+                    self.i += 1
+                    chain = self.block(chain, {"ENDCASE"})
+                if self.i < len(self.toks) and self.toks[self.i][0] == "ENDCASE":
+                    self.i += 1
+                pending = ends + chain
             elif kind == "LOOP":
                 if not pending:
                     self.skip()
@@ -360,6 +403,15 @@ class _Builder:
         for r in self.cfg.returns:
             self.cfg.edges.append((r, ex, ""))
         return self.cfg
+
+
+def unsupported_flow(func: Func) -> list:
+    """Comandos que alteram o fluxo e que o GFC desta ferramenta não modela."""
+    achados = []
+    for ln in func.lines:
+        for m in re.finditer(r"(?i)\b(EXIT\s+(?:WHILE|FOR|FOREACH|CASE)|CONTINUE\s+(?:WHILE|FOR|FOREACH)|GOTO\s+\w+)\b", ln):
+            achados.append(re.sub(r"\s+", " ", m.group(1)).upper())
+    return sorted(set(achados))
 
 
 def build_cfg(func: Func, decompose: bool = True) -> CFG:
@@ -534,7 +586,43 @@ def is_executable(cfg: CFG) -> bool:
     return True
 
 
-def run_cfg(cfg: CFG, args, scale=2, max_steps=500):
+_INT_TYPES = {"INTEGER", "INT", "SMALLINT", "SERIAL", "BIGINT", "INT8", "BIGSERIAL"}
+_DEC_TYPES = {"DECIMAL", "DEC", "NUMERIC", "MONEY", "FLOAT", "SMALLFLOAT"}
+_INT_MAX = {"SMALLINT": 32767, "INTEGER": 2147483647, "INT": 2147483647, "SERIAL": 2147483647}
+
+
+def var_scale(func: Func, name: str, default: int = 2) -> int:
+    """Casas decimais da variável, conforme o tipo declarado (INTEGER = 0)."""
+    t = func.types.get(name)
+    if not t:
+        return default
+    kind, _prec, sc = t
+    if kind in _INT_TYPES:
+        return 0
+    if kind == "MONEY":
+        return sc or 2
+    if kind in ("FLOAT", "SMALLFLOAT"):
+        return default
+    if kind in ("DECIMAL", "DEC", "NUMERIC"):
+        return sc
+    return default
+
+
+def is_numeric_var(func: Func, name: str) -> bool:
+    t = func.types.get(name)
+    return (not t) or t[0] in _INT_TYPES or t[0] in _DEC_TYPES
+
+
+def func_scales(func: Func, default: int = 2) -> dict:
+    return {v: var_scale(func, v, default) for v in func.variables}
+
+
+def result_scale(func: Func, default: int = 2) -> int:
+    sc = [var_scale(func, v, default) for v in func.variables if func.types.get(v) and is_numeric_var(func, v)]
+    return max(sc) if sc else default
+
+
+def run_cfg(cfg: CFG, args, scale=2, max_steps=2000, scales=None):
     q = D(1).scaleb(-scale)
     env = {v: None for v in cfg.locals}
     env.update(zip(cfg.params, args))
@@ -555,7 +643,8 @@ def run_cfg(cfg: CFG, args, scale=2, max_steps=500):
                 m = re.match(r"(?i)^LET\s+(\w+)\s*=\s*(.*)$", s)
                 if m:
                     val = _eval(m.group(2), env)
-                    env[m.group(1)] = (val.quantize(q, rounding=ROUND_HALF_UP)
+                    qv = D(1).scaleb(-scales[m.group(1)]) if scales and m.group(1) in scales else q
+                    env[m.group(1)] = (val.quantize(qv, rounding=ROUND_HALF_UP)
                                        if isinstance(val, D) else val)
                 else:
                     expr = re.sub(r"(?i)^RETURN\b", "", s).strip()
@@ -585,10 +674,45 @@ def detect_decimal(func: Func | None, text: str = ""):
     return (int(m.group(1)), int(m.group(2))) if m else (12, 2)
 
 
-def epsilon_info(precision: int, scale: int) -> dict:
+def type_label(func: Func, name: str) -> str:
+    t = func.types.get(name)
+    if not t:
+        return "não declarado"
+    kind, prec, sc = t
+    if kind in _INT_TYPES or prec is None:
+        return kind
+    if kind in _DEC_TYPES:
+        return f"{kind}({prec},{sc})"
+    return f"{kind}({prec})"
+
+
+def detect_type(func: Func | None, text: str = ""):
+    """(tipo, precisão, escala) dominante da unidade: primeiro parâmetro numérico declarado."""
+    if func:
+        typed = [p for p in func.params if func.types.get(p)
+                 and (func.types[p][0] in _INT_TYPES or func.types[p][0] in _DEC_TYPES)]
+        if typed:                                   # destaca o parâmetro de menor ε (mais casas decimais)
+            p = max(typed, key=lambda q: var_scale(func, q))
+            t = func.types[p]
+            return t[0], (t[1] or 10), var_scale(func, p)
+    prec, sc = detect_decimal(func, text)
+    return "DECIMAL", prec, sc
+
+
+def epsilon_info(precision: int, scale: int, kind: str = "DECIMAL") -> dict:
     eps = D(1).scaleb(-scale)
-    return {"precision": precision, "scale": scale, "epsilon": eps,
-            "max": D(10) ** (precision - scale) - eps}
+    if kind in _INT_TYPES:
+        mx, label = D(_INT_MAX.get(kind, 2147483647)), kind
+    else:
+        mx, label = D(10) ** (precision - scale) - eps, f"{kind}({precision},{scale})"
+    return {"precision": precision, "scale": scale, "epsilon": eps, "max": mx,
+            "kind": kind, "label": label}
+
+
+def param_eps_table(func: Func, default_scale: int = 2) -> list:
+    return [{"Parâmetro": p, "Tipo": type_label(func, p),
+             "Casas decimais": var_scale(func, p, default_scale),
+             "ε": D(1).scaleb(-var_scale(func, p, default_scale))} for p in func.params]
 
 
 def fmt(v) -> str:
@@ -601,120 +725,329 @@ def fmt(v) -> str:
     return str(v)
 
 
+def fmt_s(v, sc: int = 2) -> str:
+    """Formata respeitando as casas decimais do tipo (INTEGER = 0)."""
+    if v is None:
+        return "NULL"
+    if isinstance(v, bool):
+        return str(v)
+    if isinstance(v, D):
+        return format(v, f".{max(int(sc), 0)}f").replace(".", ",")
+    return str(v)
+
+
 def _invalid(op, c, x):
     return {"<": x < c, "<=": x <= c, ">": x > c, ">=": x >= c}[op]
 
 
+def _err_code(lines, li):
+    """Literal retornado logo após a condição (ex.: IF x < 0 THEN RETURN -1)."""
+    for k in range(li, min(li + 4, len(lines))):
+        ln = lines[k]
+        m = (re.search(r"(?i)\bTHEN\s+RETURN\s+(-?\d+(?:\.\d+)?)\b", ln)
+             or re.match(r"(?i)^\s*RETURN\s+(-?\d+(?:\.\d+)?)\s*$", ln))
+        if m:
+            return m.group(1)
+        if k > li and re.match(r"(?i)^\s*(END\s+IF|ELSE)\b", ln):
+            break
+    return None
+
+
 def derive_rules(func: Func, eps: D):
-    """Descobre as fronteiras no código (var OP literal) e gera On/Off/Interior/Exterior."""
+    """Descobre as fronteiras no código (var OP literal) e gera On/Off/Interior/Exterior.
+    O épsilon de cada fronteira vem do tipo da variável comparada."""
+    default_scale = max(0, -eps.as_tuple().exponent)
     found = {}
-    for ln in func.lines:
+    for li, ln in enumerate(func.lines):
         for m in re.finditer(r"(?i)\b([A-Za-z_][\w.]*)\s*(<=|>=|<|>)\s*(-?\d+(?:\.\d+)?)", ln):
-            found.setdefault((m.group(2), D(m.group(3))), set()).add(m.group(1))
+            var, op, c = m.group(1), m.group(2), D(m.group(3))
+            key = (op, c, var_scale(func, var, default_scale))
+            slot = found.setdefault(key, {"vars": set(), "err": None})
+            slot["vars"].add(var)
+            slot["err"] = slot["err"] or _err_code(func.lines, li)
     rules = []
-    for (op, c), vs in found.items():
+    for (op, c, sc), info in found.items():
+        e = D(1).scaleb(-sc)
         inv_below = op in ("<", "<=")
-        on = c
-        off = {"<": c - eps, "<=": c + eps, ">": c + eps, ">=": c - eps}[op]
+        off = {"<": c - e, "<=": c + e, ">": c + e, ">=": c - e}[op]
         interior = c + 100 if inv_below else c - 100
         exterior = c - 100 if inv_below else c + 100
+        validation = info["err"] is not None
         pts = []
-        for nome, val in (("On", on), ("Off", off), ("Interior", interior), ("Exterior", exterior)):
+        for nome, val in (("On", c), ("Off", off), ("Interior", interior), ("Exterior", exterior)):
             bad = _invalid(op, c, val)
-            pts.append({"ponto": nome, "valor": val,
-                        "classe": "Inválida" if bad else "Válida",
-                        "esperado": "Erro (-1)" if bad else "Sucesso (cálculo OK)"})
-        rules.append({"op": op, "c": c, "vars": sorted(vs), "points": pts,
-                      "inv_below": inv_below, "from_code": True})
-    if not rules:  # fallback: regra do manual
+            if validation:
+                classe = "Inválida" if bad else "Válida"
+                esperado = f"Erro ({info['err']})" if bad else "Sucesso (cálculo OK)"
+            else:
+                classe = "Ramo V" if bad else "Ramo F"
+                esperado = "Ramo V (condição verdadeira)" if bad else "Ramo F (condição falsa)"
+            pts.append({"ponto": nome, "valor": val, "classe": classe, "esperado": esperado})
+        rules.append({"op": op, "c": c, "vars": sorted(info["vars"]), "points": pts,
+                      "inv_below": inv_below, "from_code": True, "scale": sc, "eps": e,
+                      "kind": "validacao" if validation else "decisao", "err_code": info["err"]})
+    if not rules:  # fallback: fronteira padrão do laboratório (0,00)
         pts = []
         for nome, val in (("On", D(0)), ("Off", -eps), ("Interior", D(100)), ("Exterior", D(-100))):
             bad = val < 0
             pts.append({"ponto": nome, "valor": val, "classe": "Inválida" if bad else "Válida",
                         "esperado": "Erro (-1)" if bad else "Sucesso (cálculo OK)"})
-        rules.append({"op": "<", "c": D(0), "vars": [], "points": pts,
-                      "inv_below": True, "from_code": False})
+        rules.append({"op": "<", "c": D(0), "vars": [], "points": pts, "inv_below": True,
+                      "from_code": False, "scale": default_scale, "eps": eps,
+                      "kind": "padrao", "err_code": "-1"})
     return rules
 
 
-def range_text(op, c, invalid: bool):
+def range_text(op, c, invalid: bool, sc: int = 2):
     sym = {"<": ("<", "≥"), "<=": ("≤", ">"), ">": (">", "≤"), ">=": ("≥", "<")}[op]
-    return f"x {sym[0] if invalid else sym[1]} {fmt(c)}"
+    return f"x {sym[0] if invalid else sym[1]} {fmt_s(c, sc)}"
 
 
-def build_pce(func: Func, rule) -> list:
+def rule_targets(func: Func, rule) -> list:
+    """Índices dos parâmetros a que a fronteira se aplica (todos, se nenhum for citado)."""
+    idx = [i for i, p in enumerate(func.params) if p in rule["vars"]]
+    return idx or list(range(len(func.params)))
+
+
+def build_pce(func: Func, rules) -> list:
+    if isinstance(rules, dict):
+        rules = [rules]
     rows = []
-    has_null = any(re.search(r"(?i)\bIS\s+NULL\b", ln) for ln in func.lines)
-    pts = {p["ponto"]: p["valor"] for p in rule["points"]}
-    valid_rep = pts["Interior"] if not _invalid(rule["op"], rule["c"], pts["Interior"]) else pts["Exterior"]
-    invalid_rep = pts["Exterior"] if valid_rep == pts["Interior"] else pts["Interior"]
-    for p in func.params:
-        rows += [
-            {"Entrada": p, "Classe": "C1 · Faixa válida", "Faixa": range_text(rule["op"], rule["c"], False),
-             "Tipo": "Válida", "Representante": fmt(valid_rep),
-             "Justificativa": "Região em que o código segue para a fórmula."},
-            {"Entrada": p, "Classe": "C2 · Faixa inválida", "Faixa": range_text(rule["op"], rule["c"], True),
-             "Tipo": "Inválida", "Representante": fmt(invalid_rep),
-             "Justificativa": "Região rejeitada pela validação (retorno -1)." if rule["from_code"]
-             else "Regra do manual — o código NÃO valida esta faixa."},
-            {"Entrada": p, "Classe": "C3 · Nulo", "Faixa": "NULL",
-             "Tipo": "Válida (tratada como 0)" if has_null else "Inválida",
-             "Representante": "NULL",
-             "Justificativa": "O código converte NULL em 0 antes da validação." if has_null
-             else "Nenhum tratamento de NULL encontrado no código."},
-        ]
+    for i, p in enumerate(func.params):
+        k = 0
+        for rule in rules:
+            if i not in rule_targets(func, rule):
+                continue
+            pts = {q["ponto"]: q["valor"] for q in rule["points"]}
+            valid_rep = pts["Interior"] if not _invalid(rule["op"], rule["c"], pts["Interior"]) else pts["Exterior"]
+            invalid_rep = pts["Exterior"] if valid_rep == pts["Interior"] else pts["Interior"]
+            if rule["kind"] == "decisao":
+                nome_v, nome_i = "Condição falsa (ramo F)", "Condição verdadeira (ramo V)"
+                tipo_i = "Válida"
+                just_v = f"O predicado {range_text(rule['op'], rule['c'], True, rule['scale'])} é falso: segue o ramo F."
+                just_i = "O predicado é verdadeiro: segue o ramo V."
+            else:
+                nome_v, nome_i = "Faixa válida", "Faixa inválida"
+                tipo_i = "Inválida"
+                just_v = "Região em que o código segue para o processamento normal."
+                just_i = (f"Região rejeitada pela validação (retorno {rule['err_code']})." if rule["from_code"]
+                          else "Fronteira assumida em 0,00: o código NÃO compara o valor com constante.")
+            rows += [
+                {"Entrada": p, "Classe": f"C{k + 1} · {nome_v}", "Faixa": range_text(rule["op"], rule["c"], False, rule["scale"]),
+                 "Tipo": "Válida", "Representante": fmt_s(valid_rep, rule["scale"]), "Justificativa": just_v},
+                {"Entrada": p, "Classe": f"C{k + 2} · {nome_i}", "Faixa": range_text(rule["op"], rule["c"], True, rule["scale"]),
+                 "Tipo": tipo_i, "Representante": fmt_s(invalid_rep, rule["scale"]), "Justificativa": just_i},
+            ]
+            k += 2
+        has_null = any(re.search(rf"(?i)\b{re.escape(p)}\s+IS\s+NULL\b", ln) for ln in func.lines)
+        rows.append({"Entrada": p, "Classe": f"C{k + 1} · Nulo", "Faixa": "NULL",
+                     "Tipo": "Válida (tratada como 0)" if has_null else "Inválida",
+                     "Representante": "NULL",
+                     "Justificativa": "O código converte NULL em 0 antes de continuar." if has_null
+                     else "Nenhum tratamento de NULL encontrado para este parâmetro."})
     return rows
 
 
-def oracle(args) -> D:
-    """Oráculo EXTERNO (regra de negócio do manual) — nunca o código-fonte."""
-    vals = [D(0) if a is None else a for a in args]
-    if any(v < 0 for v in vals):
-        return D(-1)
-    return (vals[0] * vals[1] + vals[2]).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+# --- Oráculo: regra de negócio externa, escrita pelo testador ---------------
+_BIN = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+        ast.Div: operator.truediv, ast.Mod: operator.mod}
+_CMP = {ast.Lt: operator.lt, ast.LtE: operator.le, ast.Gt: operator.gt, ast.GtE: operator.ge,
+        ast.Eq: operator.eq, ast.NotEq: operator.ne}
+_FUNCS = {"abs": abs, "min": min, "max": max}
 
 
-BASE = [D("10.00"), D("5.00"), D("3.00")]
+def _norm_oracle(expr: str) -> str:
+    e = expr.strip()
+    e = e.replace("<>", "!=")
+    e = re.sub(r"(?<![<>!=])=(?!=)", "==", e)
+    e = re.sub(r"\bOR\b", " or ", e)
+    e = re.sub(r"\bAND\b", " and ", e)
+    e = re.sub(r"\bNOT\b", " not ", e)
+    return e
 
 
-def build_suite(rule, eps: D, n_params=3):
-    cases = []
+def default_oracle_expr(func: Func) -> str:
+    """Especificação conhecida (CAD0001). Para outros programas, o testador escreve a sua."""
+    if "cad0001_calcula_valor" in func.name.lower() and len(func.params) == 3:
+        a, b, c = func.params
+        return f"-1 if {a} < 0 or {b} < 0 or {c} < 0 else {a} * {b} + {c}"
+    return ""
+
+
+def compile_oracle(expr: str, names, scale: int = 2, null_as_zero: bool = True):
+    """Compila a expressão do oráculo (subconjunto seguro do Python, sem eval/exec).
+    Variáveis: nomes dos parâmetros ou p1..pn. Retorna f(args) -> Decimal | None."""
+    try:
+        tree = ast.parse(_norm_oracle(expr), mode="eval")
+    except SyntaxError as ex:
+        raise ValueError(f"sintaxe inválida ({ex.msg})")
+    allowed = set(names) | {f"p{i + 1}" for i in range(len(names))}
+
+    def check(n):
+        if isinstance(n, ast.Expression):
+            return check(n.body)
+        if isinstance(n, ast.Constant):
+            if isinstance(n.value, (int, float, bool)):
+                return
+            raise ValueError("só números são permitidos como constantes")
+        if isinstance(n, ast.Name):
+            if n.id not in allowed:
+                raise ValueError(f"nome desconhecido: {n.id} (use {', '.join(names)})")
+            return
+        if isinstance(n, ast.BinOp) and type(n.op) in _BIN:
+            return check(n.left), check(n.right)
+        if isinstance(n, ast.UnaryOp) and isinstance(n.op, (ast.USub, ast.UAdd, ast.Not)):
+            return check(n.operand)
+        if isinstance(n, ast.BoolOp):
+            return [check(v) for v in n.values]
+        if isinstance(n, ast.Compare) and all(type(o) in _CMP for o in n.ops):
+            return check(n.left), [check(c) for c in n.comparators]
+        if isinstance(n, ast.IfExp):
+            return check(n.test), check(n.body), check(n.orelse)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in _FUNCS \
+                and not n.keywords:
+            return [check(a) for a in n.args]
+        raise ValueError("expressão não permitida (use + - * / %, comparações, and/or/not, "
+                         "'A if condição else B', abs/min/max)")
+
+    check(tree)
+    q = D(1).scaleb(-scale)
+
+    def ev(n, env):
+        if isinstance(n, ast.Expression):
+            return ev(n.body, env)
+        if isinstance(n, ast.Constant):
+            return n.value if isinstance(n.value, bool) else D(str(n.value))
+        if isinstance(n, ast.Name):
+            return env[n.id]
+        if isinstance(n, ast.BinOp):
+            return _BIN[type(n.op)](ev(n.left, env), ev(n.right, env))
+        if isinstance(n, ast.UnaryOp):
+            v = ev(n.operand, env)
+            return (not v) if isinstance(n.op, ast.Not) else (-v if isinstance(n.op, ast.USub) else +v)
+        if isinstance(n, ast.BoolOp):
+            if isinstance(n.op, ast.And):
+                r = True
+                for v in n.values:
+                    r = ev(v, env)
+                    if not r:
+                        return r
+                return r
+            r = False
+            for v in n.values:
+                r = ev(v, env)
+                if r:
+                    return r
+            return r
+        if isinstance(n, ast.Compare):
+            left = ev(n.left, env)
+            for op, comp in zip(n.ops, n.comparators):
+                right = ev(comp, env)
+                if not _CMP[type(op)](left, right):
+                    return False
+                left = right
+            return True
+        if isinstance(n, ast.IfExp):
+            return ev(n.body, env) if ev(n.test, env) else ev(n.orelse, env)
+        if isinstance(n, ast.Call):
+            return _FUNCS[n.func.id](*[ev(a, env) for a in n.args])
+        raise ValueError("expressão não permitida")
+
+    def oracle(args):
+        vals = [(D(0) if (a is None and null_as_zero) else a) for a in args]
+        env = dict(zip(names, vals))
+        env.update({f"p{i + 1}": v for i, v in enumerate(vals)})
+        try:
+            r = ev(tree, env)
+        except (TypeError, ArithmeticError):
+            return None
+        if isinstance(r, bool) or not isinstance(r, D):
+            return None
+        return r.quantize(q, rounding=ROUND_HALF_UP)
+
+    return oracle
+
+
+def _is_invalid_for(func, rules, i, x):
+    return any(r["kind"] in ("validacao", "padrao") and i in rule_targets(func, r)
+               and _invalid(r["op"], r["c"], x) for r in rules)
+
+
+def build_suite(func: Func, rules, oracle=None):
+    """Suíte caixa-preta (PCE + AVL) para qualquer quantidade de parâmetros numéricos."""
+    n = len(func.params)
+    prim = [10, 5, 3, 2, 4, 6, 8, 9, 7]
+    cand = [10, 5, 3, 2, 1, 20, 50, 100, 500, 1000]
+    base = []
+    for i in range(n):
+        order = [D(prim[i % len(prim)])] + [D(c) for c in cand]
+        base.append(next((v for v in order if not _is_invalid_for(func, rules, i, v)), D(1)))
+    cases, seen = [], set()
 
     def add(tec, desc, args):
-        cases.append({"id": f"CT{len(cases) + 1:02d}", "tecnica": tec,
-                      "descricao": desc, "args": tuple(args), "esperado": oracle(args)})
+        key = tuple(args)
+        if key in seen:
+            return
+        seen.add(key)
+        cases.append({"id": f"CT{len(cases) + 1:02d}", "tecnica": tec, "descricao": desc,
+                      "args": key, "esperado": oracle(args) if oracle else None})
 
-    add("PCE", "Todos os parâmetros na classe válida", BASE)
-    for i in range(n_params):
-        a = list(BASE)
+    multi = len(rules) > 1
+
+    def tag(rule):
+        return f" (fronteira {rule['op']} {fmt_s(rule['c'], rule['scale'])})" if multi else ""
+
+    add("PCE", "Todos os parâmetros na classe válida", base)
+    for i in range(n):
+        a = list(base)
         a[i] = None
         add("PCE", f"Parâmetro {i + 1} nulo", a)
-    for i in range(n_params):
-        for p in rule["points"]:
-            a = list(BASE)
-            a[i] = p["valor"]
-            add("AVL", f"Parâmetro {i + 1} no ponto {p['ponto']}", a)
-    for i in range(n_params):
-        a = list(BASE)
-        a[i] = rule["c"] + eps
-        add("AVL", f"Parâmetro {i + 1} em On + ε", a)
-    add("PCE", "Todos zerados", [D(0)] * n_params)
-    add("PCE", "Todos negativos", [D(-1)] * n_params)
+    for rule in rules:
+        for i in rule_targets(func, rule):
+            for p in rule["points"]:
+                a = list(base)
+                a[i] = p["valor"]
+                add("AVL", f"Parâmetro {i + 1} no ponto {p['ponto']}{tag(rule)}", a)
+    for rule in rules:
+        for i in rule_targets(func, rule):
+            a = list(base)
+            a[i] = rule["c"] + rule["eps"]
+            add("AVL", f"Parâmetro {i + 1} em On + ε{tag(rule)}", a)
+    add("PCE", "Todos zerados", [D(0)] * n)
+    add("PCE", "Todos negativos", [D(-1)] * n)
     return cases
 
 
-def run_suite(cfg: CFG, cases, scale=2):
+def is_testable(func: Func) -> bool:
+    """A unidade pode ser executada pelo interpretador interno com entradas numéricas?"""
+    if not func.params or not all(is_numeric_var(func, p) for p in func.params):
+        return False
+    if any('"…"' in ln for ln in func.lines):
+        return False
+    return is_executable(build_cfg(func, True))
+
+
+def run_suite(cfg: CFG, cases, scale=2, scales=None, rscale=None):
+    q = D(1).scaleb(-rscale) if rscale is not None else None
+
+    def norm(v):
+        return v.quantize(q, rounding=ROUND_HALF_UP) if (q is not None and isinstance(v, D)) else v
+
     rows = []
     for c in cases:
         try:
-            r = run_cfg(cfg, c["args"], scale)
+            r = run_cfg(cfg, c["args"], scale, scales=scales)
             obtido, trace, edges, err = r["result"], r["trace"], r["edges"], ""
         except Exception as ex:                       # noqa: BLE001
             obtido, trace, edges, err = None, [], [], type(ex).__name__
-        ok = (not err) and obtido is not None and obtido == c["esperado"]
+        if c["esperado"] is None:
+            ok = None                                 # sem oráculo definido
+        else:
+            ok = (not err) and obtido is not None and norm(obtido) == norm(c["esperado"])
         rows.append({**c, "obtido": obtido, "erro": err, "ok": ok,
                      "trace": trace, "edges": edges})
     return rows
+
 
 
 # ---------------------------------------------------------------------------
@@ -890,9 +1223,18 @@ def generate_mutants(func: Func):
 PROBE = [None, D("-100"), D("-0.01"), D("0"), D("0.01"), D("1"), D("100")]
 
 
-def _signature(cfg, args, scale):
+def probe_set(n):
+    """Menos valores quando há muitos parâmetros (o produto cresce como k^n)."""
+    if n <= 3:
+        return PROBE
+    if n == 4:
+        return [None, D("-100"), D("0"), D("1"), D("100")]
+    return [None, D("-1"), D("1")]
+
+
+def _signature(cfg, args, scale, scales=None):
     try:
-        r = run_cfg(cfg, args, scale)
+        r = run_cfg(cfg, args, scale, scales=scales)
         return ("ok", r["result"])
     except Exception as ex:                           # noqa: BLE001
         return ("err", type(ex).__name__)
@@ -900,23 +1242,24 @@ def _signature(cfg, args, scale):
 
 def run_mutation(func: Func, cases, scale=2):
     cfg0 = build_cfg(func, True)
-    base_sig = [_signature(cfg0, c["args"], scale) for c in cases]
+    scales = func_scales(func, scale)
+    base_sig = [_signature(cfg0, c["args"], scale, scales) for c in cases]
     n = len(func.params)
-    probes = list(product(PROBE, repeat=n))
+    probes = list(product(probe_set(n), repeat=n))
     base_probe = {}
     rows = []
     for m in generate_mutants(func):
         mf = Func(func.name, func.params, m["lines"], func.defines, func.start, func.end, func.types)
         cfg = build_cfg(mf, True)
         killed_by = next((c["id"] for c, b in zip(cases, base_sig)
-                          if _signature(cfg, c["args"], scale) != b), None)
+                          if _signature(cfg, c["args"], scale, scales) != b), None)
         status, witness = "Morto", ""
         if killed_by is None:
             status = "Equivalente (provável)"
             for args in probes:
                 if args not in base_probe:
-                    base_probe[args] = _signature(cfg0, args, scale)
-                if _signature(cfg, args, scale) != base_probe[args]:
+                    base_probe[args] = _signature(cfg0, args, scale, scales)
+                if _signature(cfg, args, scale, scales) != base_probe[args]:
                     status = "Vivo"
                     witness = "(" + "; ".join(fmt(a) for a in args) + ")"
                     break

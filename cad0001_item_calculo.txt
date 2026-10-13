@@ -33,7 +33,6 @@ END FUNCTION
 
 #--------------------------------------------------------------------------#
 # Função de Regra de Negócio: Cálculo Fictício
-# Retorno: valor calculado (>= 0) ou -1 quando algum parâmetro é negativo
 #--------------------------------------------------------------------------#
 FUNCTION cad0001_calcula_valor(p_val1, p_val2, p_val3)
     DEFINE p_val1          DECIMAL(12,2),
@@ -45,11 +44,6 @@ FUNCTION cad0001_calcula_valor(p_val1, p_val2, p_val3)
     IF p_val1 IS NULL THEN LET p_val1 = 0 END IF
     IF p_val2 IS NULL THEN LET p_val2 = 0 END IF
     IF p_val3 IS NULL THEN LET p_val3 = 0 END IF
-
-    # Regra de Negócio de Fronteira: valores não podem ser negativos (< 0.00)
-    IF p_val1 < 0 OR p_val2 < 0 OR p_val3 < 0 THEN
-        RETURN -1   # Código de Erro de Parâmetro Inválido
-    END IF
 
     # Fórmula Fictícia: (Parametro1 * Parametro2) + Parametro3
     LET l_val_calculado = (p_val1 * p_val2) + p_val3
@@ -66,12 +60,6 @@ FUNCTION cad0001_incluir()
     LET mr_item.val_calculado = cad0001_calcula_valor(mr_item.val_param1, 
                                                      mr_item.val_param2, 
                                                      mr_item.val_param3)
-
-    # Parâmetro inválido: não grava nada (o resultado válido é sempre >= 0)
-    IF mr_item.val_calculado = -1 THEN
-        MESSAGE "Parametros invalidos: os valores nao podem ser negativos."
-        RETURN FALSE
-    END IF
 
     # 2. Início do bloco transacional
     BEGIN WORK
@@ -136,12 +124,6 @@ FUNCTION cad0001_alterar()
     LET mr_item.val_calculado = cad0001_calcula_valor(mr_item.val_param1, 
                                                      mr_item.val_param2, 
                                                      mr_item.val_param3)
-
-    # Parâmetro inválido: não altera nada (o resultado válido é sempre >= 0)
-    IF mr_item.val_calculado = -1 THEN
-        MESSAGE "Parametros invalidos: os valores nao podem ser negativos."
-        RETURN FALSE
-    END IF
 
     BEGIN WORK
 
