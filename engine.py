@@ -4,8 +4,7 @@ engine.py — Motor determinístico do TestingStudio Web.
 Tudo aqui é calculado em Python puro (sem IA):
   Módulo 1  Caixa-preta : épsilon, PCE, AVL, suíte de testes com oráculo
   Módulo 2  Caixa-branca: Grafo de Fluxo de Controle (GFC) e V(G) de McCabe
-  Módulo 3  Fluxo de dados (pares Def-Uso)
-  Módulo 4  Teste de Mutação (MS)
+  Módulo 3  Fluxo de dados (pares Def-Uso) e Teste de Mutação (MS)
 
 O Gemini entra apenas como "parceiro de pareamento" (parecer opcional).
 """
@@ -1157,7 +1156,7 @@ def pair_covered(trace, pair, info) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# 6. Módulo 4 — Teste de Mutação
+# 6. Módulo 3 — Teste de Mutação
 # ---------------------------------------------------------------------------
 _TOK = re.compile(r"(?P<num>\d+(?:\.\d+)?)|(?P<id>[A-Za-z_][\w.]*)|(?P<op><>|<=|>=|[-+*/<>=])|(?P<par>[()])|(?P<ws>\s+)|(?P<other>.)")
 _NOT_OPERAND = {"RETURN", "LET", "IF", "THEN", "OR", "AND", "NOT", "IS", "ELSE"}

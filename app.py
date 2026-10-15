@@ -3,8 +3,8 @@ TestingStudio Web — Auditor de Testes de Software
 
 Módulo 1  Caixa-preta  : PCE + AVL com épsilon calculado
 Módulo 2  Caixa-branca : GFC + Complexidade Ciclomática de McCabe
-Módulo 3  Fluxo de dados (pares Def-Uso)
-Módulo 4  Teste de Mutação (MS)
+Módulo 3  Fluxo de dados (pares Def-Uso) + Teste de Mutação (MS)
+Módulo 4  Validação dos resultados
 """
 import hashlib
 import os
@@ -335,7 +335,8 @@ tabs = st.tabs([
     "Módulo 1: Caixa-preta",
     "Módulo 2: Caixa-branca",
     "Módulo 3: Fluxo de dados",
-    "Módulo 4: Mutação",
+    "Módulo 3: Mutação",
+    "Módulo 4: Validação",
 ])
 
 # ===========================================================================
@@ -726,7 +727,7 @@ Código:
 {source}""")
 
 # ===========================================================================
-# ABA 4 — Módulo 4: Mutação
+# ABA 4 — Módulo 3: Mutação
 # ===========================================================================
 @st.cache_data(show_spinner="Gerando e executando mutantes...")
 def mutacao_cached(fonte: str, fname: str, ids: tuple):
@@ -739,7 +740,7 @@ def mutacao_cached(fonte: str, fname: str, ids: tuple):
 
 
 with tabs[4]:
-    st.subheader("Módulo 4: Teste de mutação: quão boa é a sua suíte de testes?")
+    st.subheader("Módulo 3: Teste de mutação: quão boa é a sua suíte de testes?")
     st.caption("Injetamos defeitos propositais (mutantes) e verificamos se os testes “matam” cada um.")
     if not (calc and suite):
         note("A mutação requer uma unidade executável pelo interpretador interno: parâmetros numéricos e comandos LET/RETURN/IF/laços (sem SQL, CALL ou texto).", "warn")
@@ -812,6 +813,164 @@ teste adicionais elevariam o Escore de Mutação. Responda em português.
 
 Código:
 {source}""")
+
+# ===========================================================================
+# ABA 5 — Módulo 4: Validação
+# ===========================================================================
+OK_, WARN_, BAD_, NA_ = "✅ Ok", "⚠️ Atenção", "❌ Falha", "➖ Não avaliado"
+
+with tabs[5]:
+    st.subheader("Módulo 4: Validação dos resultados")
+    st.caption("Conferência final da análise. Cada verificação é calculada pelo app a partir do fonte, sem IA, "
+               "e serve de roteiro para a apresentação.")
+    if not calc:
+        note("Nenhuma função com parâmetros encontrada: não há unidade para validar.", "warn")
+    else:
+        # ---- dados reaproveitados dos módulos anteriores -----------------------
+        mc_v = eg.mccabe(cfg_calc)
+        fluxo_v = eg.unsupported_flow(calc)
+        pares_v = eg.du_pairs(cfg_calc)
+        info_v = eg.defuse_info(cfg_calc)
+        cob_nos = cob_arestas = cob_du = None
+        if resultados:
+            cn_v = {n for r in resultados for n in r["trace"]}
+            ce_v = {e for r in resultados for e in r["edges"]}
+            cob_nos = (len(cn_v), len(cfg_calc.nodes))
+            cob_arestas = (len(ce_v), len(cfg_calc.edges))
+            trs_v = [r["trace"] for r in resultados]
+            cob_du = (sum(any(eg.pair_covered(t, p, info_v) for t in trs_v) for p in pares_v), len(pares_v))
+        ms_v = None
+        if suite:
+            try:
+                ms_v = eg.mutation_score(mutacao_cached(source, calc.name, tuple(c["id"] for c in suite)))
+            except Exception:                                           # noqa: BLE001
+                ms_v = None
+        n_ok_v = sum(r["ok"] is True for r in resultados) if resultados else 0
+        n_bad_v = sum(r["ok"] is False for r in resultados) if resultados else 0
+
+        def pct(a, b):
+            return f"{a}/{b} ({a / b * 100:.0f}%)" if b else "0/0"
+
+        # ---- A. validação da análise ---------------------------------------------
+        A = []
+        A.append(("Fonte", "Fonte analisado",
+                  WARN_ if source != original else OK_,
+                  ("Código editado na tela: difere do arquivo (o arquivo em si não é alterado)."
+                   if source != original else
+                   f"Idêntico ao arquivo {origem} (SHA-256 {hashlib.sha256(source.encode('utf-8')).hexdigest()[:10]}).")))
+        A.append(("Módulo 1", "Épsilon coerente com o tipo",
+                  OK_ if ei["epsilon"] == D(1).scaleb(-ei["scale"]) else BAD_,
+                  f"ε = {eps_txt(ei['epsilon'])} para {ei['label']}"))
+        linhas_por_param = [sum(r["Entrada"] == p for r in pce_rows) for p in calc.params]
+        A.append(("Módulo 1", "PCE cobre todos os parâmetros",
+                  OK_ if all(n >= 3 for n in linhas_por_param) else WARN_,
+                  f"{len(calc.params)} parâmetro(s), {len(pce_rows)} classes de equivalência"))
+        quatro = all({p["ponto"] for p in r["points"]} == {"On", "Off", "Interior", "Exterior"} for r in rules)
+        padrao_v = any(r["kind"] == "padrao" for r in rules)
+        A.append(("Módulo 1", "AVL com On, Off, Interior e Exterior",
+                  (WARN_ if padrao_v else OK_) if quatro else BAD_,
+                  (f"{len(rules)} fronteira(s), {4 * len(rules)} pontos"
+                   + ("; fronteira padrão em 0,00 (o código não compara com constante)." if padrao_v else "."))))
+        A.append(("Módulo 1", "Suíte de casos de teste gerada",
+                  OK_ if suite else WARN_,
+                  (f"{len(suite)} casos ({sum(c['tecnica'] == 'PCE' for c in suite)} PCE, "
+                   f"{sum(c['tecnica'] == 'AVL' for c in suite)} AVL)") if suite
+                  else "Unidade não executável pelo interpretador interno (SQL, CALL, texto...)."))
+        A.append(("Módulo 2", "V(G): as três fórmulas concordam",
+                  OK_ if mc_v["consistente"] else BAD_,
+                  f"N={mc_v['N']}, E={mc_v['E']}, P={mc_v['P']}, R={mc_v['R']}, V(G)={mc_v['V_EN']}"))
+        A.append(("Módulo 2", "Fluxo de controle totalmente modelado",
+                  WARN_ if fluxo_v else OK_,
+                  ("Usa " + ", ".join(fluxo_v) + ": V(G) pode estar subestimado.") if fluxo_v else "Sem EXIT/CONTINUE/GOTO."))
+        A.append(("Módulo 2", "Casos de teste ≥ V(G)",
+                  (OK_ if len(suite) >= mc_v["V_EN"] else WARN_) if suite else NA_,
+                  (f"{len(suite)} casos para V(G) = {mc_v['V_EN']}" if suite else "Sem suíte executável.")))
+
+        # ---- B. validação do código sob teste -----------------------------------
+        B = []
+        B.append(("Módulo 1", "Oráculo (regra de negócio) definido",
+                  BAD_ if orc_err else (OK_ if orc_fn else WARN_),
+                  f"Inválido: {orc_err}" if orc_err else ("Definido na aba Execução com oráculo." if orc_fn
+                                                         else "Sem oráculo: os casos não têm aprovado/reprovado.")))
+        B.append(("Módulo 1", "Código respeita o oráculo",
+                  (OK_ if n_bad_v == 0 else BAD_) if (resultados and orc_fn) else NA_,
+                  (f"{n_ok_v} de {len(resultados)} casos passam; {n_bad_v} falham." if (resultados and orc_fn)
+                   else "Defina o oráculo para avaliar.")))
+        B.append(("Módulo 2", "Cobertura de arestas pela suíte",
+                  (OK_ if cob_arestas[0] == cob_arestas[1] else WARN_) if cob_arestas else NA_,
+                  pct(*cob_arestas) if cob_arestas else "Sem suíte executável."))
+        B.append(("Módulo 2", "Cobertura de nós pela suíte",
+                  (OK_ if cob_nos[0] == cob_nos[1] else WARN_) if cob_nos else NA_,
+                  pct(*cob_nos) if cob_nos else "Sem suíte executável."))
+        B.append(("Módulo 3", "Todos-usos (pares definição-uso)",
+                  (OK_ if cob_du[0] == cob_du[1] else WARN_) if cob_du else NA_,
+                  (pct(*cob_du) + ("; pares restantes podem ser infactíveis." if cob_du[0] != cob_du[1] else ""))
+                  if cob_du else "Sem suíte executável."))
+        B.append(("Módulo 3", "Escore de mutação (MS)",
+                  (OK_ if ms_v["MS"] >= 90 else (WARN_ if ms_v["MS"] >= 70 else BAD_)) if ms_v else NA_,
+                  (f"MS = {ms_v['MS']:.1f}% ({ms_v['Md']} mortos de {ms_v['Mt'] - ms_v['Me']} não equivalentes)"
+                   if ms_v else "Sem suíte executável.")))
+        B.append(("Módulo 3", "Mutantes vivos",
+                  (OK_ if (ms_v["Mt"] - ms_v["Me"] - ms_v["Md"]) == 0 else WARN_) if ms_v else NA_,
+                  (f"{ms_v['Mt'] - ms_v['Me'] - ms_v['Md']} sobreviveram" if ms_v else "Sem suíte executável.")))
+
+        todas = A + B
+        cont = {s: sum(x[2] == s for x in todas) for s in (OK_, WARN_, BAD_, NA_)}
+        k = st.columns(4)
+        k[0].metric("Verificações", len(todas))
+        k[1].metric("Ok ✅", cont[OK_])
+        k[2].metric("Atenção ⚠️", cont[WARN_])
+        k[3].metric("Falhas ❌", cont[BAD_])
+
+        falhas_v = [x[1] for x in todas if x[2] == BAD_]
+        avisos_v = [x[1] for x in todas if x[2] == WARN_]
+        if falhas_v:
+            note("<b>Há falhas a tratar:</b> " + "; ".join(falhas_v) + ". Se forem falhas do código sob teste "
+                 "(oráculo, mutação), elas indicam defeitos encontrados; se forem da análise, revise o fonte.", "bad")
+        elif avisos_v:
+            note("<b>Análise válida com ressalvas:</b> " + "; ".join(avisos_v) + ".", "warn")
+        else:
+            note("<b>Tudo validado:</b> a análise é consistente e o código passa em todas as verificações.")
+
+        df_cols = ["Módulo", "Verificação", "Status", "Detalhe"]
+        st.markdown("#### Validação da análise (a ferramenta é consistente?)")
+        st.dataframe(pd.DataFrame(A, columns=df_cols), hide_index=True)
+        st.markdown("#### Validação do código sob teste (o código está bem testado e correto?)")
+        st.dataframe(pd.DataFrame(B, columns=df_cols), hide_index=True)
+
+        # ---- resumo para a apresentação -------------------------------------------
+        st.markdown("#### Resumo para a apresentação")
+        resumo_m1 = (f"Unidade `{calc.name}({', '.join(calc.params)})`; ε = {eps_txt(ei['epsilon'])} ({ei['label']}); "
+                     f"{len(pce_rows)} classes de equivalência; {len(rules)} fronteira(s) com {4 * len(rules)} pontos de AVL"
+                     + (f"; {len(suite)} casos de teste, {n_ok_v} passam e {n_bad_v} falham." if resultados and orc_fn
+                        else (f"; {len(suite)} casos de teste." if suite else ".")))
+        resumo_m2 = (f"V(G) = {mc_v['V_EN']} (N = {mc_v['N']}, E = {mc_v['E']}, P = {mc_v['P']}, R = {mc_v['R']}); "
+                     f"as três fórmulas de McCabe {'concordam' if mc_v['consistente'] else 'divergem'}."
+                     + (f" A suíte cobre {pct(*cob_arestas)} das arestas." if cob_arestas else ""))
+        resumo_m3 = (f"{len(pares_v)} pares definição-uso"
+                     + (f"; todos-usos cobertos {pct(*cob_du)}" if cob_du else "")
+                     + (f"; escore de mutação {ms_v['MS']:.1f}% ({ms_v['Md']} de {ms_v['Mt'] - ms_v['Me']} mutantes mortos)."
+                        if ms_v else "."))
+        st.markdown(f"- **Módulo 1 (caixa-preta):** {resumo_m1}\n- **Módulo 2 (caixa-branca):** {resumo_m2}\n"
+                    f"- **Módulo 3 (fluxo de dados e mutação):** {resumo_m3}")
+
+        md = [f"# Relatório de validação: {origem}", "",
+              f"Unidade sob teste: `{calc.name}({', '.join(calc.params)})`", "",
+              "## Validação da análise", "", "| Módulo | Verificação | Status | Detalhe |", "|---|---|---|---|"]
+        md += [f"| {m} | {v} | {s} | {d} |" for m, v, s, d in A]
+        md += ["", "## Validação do código sob teste", "", "| Módulo | Verificação | Status | Detalhe |", "|---|---|---|---|"]
+        md += [f"| {m} | {v} | {s} | {d} |" for m, v, s, d in B]
+        md += ["", "## Resumo", "", f"- Módulo 1: {resumo_m1}", f"- Módulo 2: {resumo_m2}", f"- Módulo 3: {resumo_m3}", ""]
+        relatorio_md = "\n".join(md)
+        st.download_button("⬇️ Baixar relatório de validação (.md)", relatorio_md.encode("utf-8"),
+                           "relatorio_validacao.md", "text/markdown")
+
+        parecer_ia("m4", f"""Você é um especialista em teste de software. Com base no relatório de validação abaixo,
+calculado por uma ferramenta determinística, escreva em português: (1) um roteiro de apresentação (pitch) de cerca
+de 2 minutos, com um parágrafo por módulo; (2) as principais limitações e riscos da análise; (3) o que você
+validaria a mais antes de confiar no resultado. Não invente números que não estejam no relatório.
+
+{relatorio_md}""")
 
 st.divider()
 st.caption("TestingStudio Web")
