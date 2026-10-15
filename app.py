@@ -3,7 +3,8 @@ TestingStudio Web — Auditor de Testes de Software
 
 Módulo 1  Caixa-preta  : PCE + AVL com épsilon calculado
 Módulo 2  Caixa-branca : GFC + Complexidade Ciclomática de McCabe
-Módulo 3  Fluxo de dados (pares Def-Uso) + Teste de Mutação (MS)
+Módulo 3  Fluxo de dados (pares Def-Uso)
+Módulo 4  Teste de Mutação (MS)
 """
 import hashlib
 import os
@@ -334,7 +335,7 @@ tabs = st.tabs([
     "Módulo 1: Caixa-preta",
     "Módulo 2: Caixa-branca",
     "Módulo 3: Fluxo de dados",
-    "Módulo 3: Mutação",
+    "Módulo 4: Mutação",
 ])
 
 # ===========================================================================
@@ -725,7 +726,7 @@ Código:
 {source}""")
 
 # ===========================================================================
-# ABA 4 — Módulo 3: Mutação
+# ABA 4 — Módulo 4: Mutação
 # ===========================================================================
 @st.cache_data(show_spinner="Gerando e executando mutantes...")
 def mutacao_cached(fonte: str, fname: str, ids: tuple):
@@ -738,7 +739,7 @@ def mutacao_cached(fonte: str, fname: str, ids: tuple):
 
 
 with tabs[4]:
-    st.subheader("Módulo 3: Teste de mutação: quão boa é a sua suíte de testes?")
+    st.subheader("Módulo 4: Teste de mutação: quão boa é a sua suíte de testes?")
     st.caption("Injetamos defeitos propositais (mutantes) e verificamos se os testes “matam” cada um.")
     if not (calc and suite):
         note("A mutação requer uma unidade executável pelo interpretador interno: parâmetros numéricos e comandos LET/RETURN/IF/laços (sem SQL, CALL ou texto).", "warn")
