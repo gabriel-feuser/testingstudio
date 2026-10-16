@@ -1276,3 +1276,164 @@ def mutation_score(rows, me_override=None):
     me = sum(r["status"].startswith("Equivalente") for r in rows) if me_override is None else me_override
     den = mt - me
     return {"Mt": mt, "Md": md, "Me": me, "MS": (md / den * 100) if den > 0 else 100.0}
+
+
+# ---------------------------------------------------------------------------
+# 7. Módulo 4 — Validação: Matriz de Rastreabilidade de Requisitos (RTM)
+# ---------------------------------------------------------------------------
+FLUXO_FELIZ = "Caminho feliz"
+FLUXO_ALT = "Fluxo alternativo"
+FLUXO_EXC = "Fluxo de exceção"
+FLUXOS = (FLUXO_FELIZ, FLUXO_ALT, FLUXO_EXC)
+
+
+def norm_id(s) -> str:
+    """Normaliza identificadores: 'req-1', 'Req 01' -> 'REQ01'."""
+    s = str(s or "").strip()
+    m = re.match(r"^([A-Za-zÀ-ÿ]+)[\s_\-]*0*(\d+)$", s)
+    return f"{m.group(1).upper()}{int(m.group(2)):02d}" if m else s.upper()
+
+
+def parse_refs(text) -> list:
+    """'REQ01, req2; REQ-3' -> ['REQ01', 'REQ02', 'REQ03'] (sem repetição, na ordem)."""
+    if isinstance(text, (list, tuple)):
+        text = ",".join(map(str, text))
+    out = []
+    for tok in re.split(r"[,;/\n]+|\s{2,}", str(text or "")):
+        tok = tok.strip()
+        if tok and norm_id(tok) not in out:
+            out.append(norm_id(tok))
+    return out
+
+
+def classify_flow(func: Func, rules, case) -> str:
+    """Tipo de fluxo (caminho feliz, alternativo/limite ou exceção) de um caso da suíte."""
+    d = case["descricao"]
+    if d.startswith("Todos os parâmetros na classe válida"):
+        return FLUXO_FELIZ
+    if "nulo" in d or d.startswith("Todos zerados"):
+        return FLUXO_ALT
+    if d.startswith("Todos negativos"):
+        return FLUXO_EXC
+    edge = False
+    for rule in rules:
+        for i in rule_targets(func, rule):
+            x = case["args"][i]
+            if not isinstance(x, D):
+                continue
+            if rule["kind"] in ("validacao", "padrao") and _invalid(rule["op"], rule["c"], x):
+                return FLUXO_EXC
+            if abs(x - rule["c"]) <= rule["eps"] or (rule["kind"] == "decisao" and _invalid(rule["op"], rule["c"], x)):
+                edge = True
+    return FLUXO_ALT if edge else FLUXO_FELIZ
+
+
+def build_rtm(reqs, cts) -> dict:
+    """RTM com cobertura bidirecional.
+    reqs: [{'id','texto'}]; cts: [{'id','tipo','descricao','reqs','resultado'}]
+    resultado: 'Passou' | 'Falhou' | 'Sem oráculo' | 'Não executado'."""
+    req_list, seen = [], set()
+    dup = []
+    for r in reqs:
+        rid = norm_id(r.get("id"))
+        if not rid:
+            continue
+        if rid in seen:
+            dup.append(rid)
+            continue
+        seen.add(rid)
+        req_list.append({"id": rid, "texto": str(r.get("texto") or "").strip()})
+    ct_list, ct_seen, ct_dup = [], set(), []
+    for c in cts:
+        cid = norm_id(c.get("id")) or ""
+        if not cid:
+            continue
+        if cid in ct_seen:
+            ct_dup.append(cid)
+            continue
+        ct_seen.add(cid)
+        ct_list.append({**c, "id": cid, "refs": parse_refs(c.get("reqs"))})
+    known = {r["id"] for r in req_list}
+    matrix = {r["id"]: {c["id"]: (r["id"] in c["refs"]) for c in ct_list} for r in req_list}
+    unknown = {c["id"]: [x for x in c["refs"] if x not in known] for c in ct_list}
+    unknown = {k: v for k, v in unknown.items() if v}
+    orphans = [c["id"] for c in ct_list if not any(x in known for x in c["refs"])]
+    rows = []
+    for r in req_list:
+        linked = [c for c in ct_list if r["id"] in c["refs"]]
+        res = [c.get("resultado") for c in linked]
+        if not linked:
+            sit = "Sem cobertura"
+        elif "Falhou" in res:
+            sit = "Coberto, com falha"
+        elif all(x == "Passou" for x in res):
+            sit = "Validado"
+        else:
+            sit = "Coberto, sem resultado"
+        tipos = {c.get("tipo") for c in linked}
+        rows.append({"id": r["id"], "texto": r["texto"], "n_cts": len(linked),
+                     "cts": [c["id"] for c in linked], "situacao": sit,
+                     "feliz": FLUXO_FELIZ in tipos, "alternativo": FLUXO_ALT in tipos,
+                     "excecao": FLUXO_EXC in tipos})
+    return {"req_ids": [r["id"] for r in req_list], "ct_ids": [c["id"] for c in ct_list],
+            "cts": ct_list, "matrix": matrix, "req_rows": rows, "orphans": orphans,
+            "unknown": unknown, "dup_reqs": dup, "dup_cts": ct_dup,
+            "fwd": (sum(1 for r in rows if r["n_cts"]), len(rows)),
+            "bwd": (len(ct_list) - len(orphans), len(ct_list))}
+
+
+def rtm_markdown(rtm: dict) -> str:
+    if not rtm or not rtm["req_ids"]:
+        return ""
+    L = ["## Matriz de Rastreabilidade de Requisitos (RTM)", "",
+         f"- Tudo o que foi pedido foi coberto? {rtm['fwd'][0]}/{rtm['fwd'][1]} requisitos com ao menos um CT.",
+         f"- Tudo o que foi testado foi pedido? {rtm['bwd'][0]}/{rtm['bwd'][1]} CTs ligados a um requisito existente.", "",
+         "| Requisito | Descrição | CTs | Feliz | Alternativo/limite | Exceção | Situação |", "|---|---|---|---|---|---|---|"]
+    for r in rtm["req_rows"]:
+        L.append(f"| {r['id']} | {r['texto']} | {', '.join(r['cts']) or '—'} | {'✔' if r['feliz'] else '—'} | "
+                 f"{'✔' if r['alternativo'] else '—'} | {'✔' if r['excecao'] else '—'} | {r['situacao']} |")
+    if rtm["orphans"]:
+        L += ["", "CTs sem requisito (órfãos): " + ", ".join(rtm["orphans"])]
+    if rtm["unknown"]:
+        L += ["", "Referências a requisitos inexistentes: " + "; ".join(f"{k} → {', '.join(v)}" for k, v in rtm["unknown"].items())]
+    return "\n".join(L) + "\n"
+
+
+def parse_trace_json(text: str, req_ids, ct_ids) -> dict:
+    """Lê a sugestão de rastreio da IA ({'CT01': ['REQ01']}) e descarta tudo que não existir."""
+    import json
+    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", str(text or "").strip(), flags=re.S)
+    m = re.search(r"\{.*\}", t, flags=re.S)
+    if not m:
+        return {}
+    try:
+        raw = json.loads(m.group(0))
+    except ValueError:
+        return {}
+    reqs, cts = set(map(norm_id, req_ids)), set(map(norm_id, ct_ids))
+    out = {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            if norm_id(k) in cts:
+                keep = [x for x in parse_refs(v) if x in reqs]
+                if keep:
+                    out[norm_id(k)] = keep
+    return out
+
+
+def default_requirements(func: Func) -> list:
+    """Requisitos sugeridos para o CAD0001 (a partir do manual); outros programas começam vazios."""
+    if "cad0001_calcula_valor" in func.name.lower() and len(func.params) == 3:
+        return [("REQ01", "Calcular o valor do item: (parâmetro 1 × parâmetro 2) + parâmetro 3."),
+                ("REQ02", "Rejeitar parâmetros negativos (< 0,00), retornando -1."),
+                ("REQ03", "Tratar parâmetros nulos (NULL) antes do cálculo.")]
+    return []
+
+
+def default_trace(func: Func, case, flow: str) -> str:
+    """Rastreio inicial dos casos da suíte para os requisitos sugeridos (vazio para outros programas)."""
+    if not default_requirements(func):
+        return ""
+    if "nulo" in case["descricao"]:
+        return "REQ03"
+    return "REQ01" if flow == FLUXO_FELIZ else "REQ02"

@@ -821,156 +821,285 @@ OK_, WARN_, BAD_, NA_ = "✅ Ok", "⚠️ Atenção", "❌ Falha", "➖ Não ava
 
 with tabs[5]:
     st.subheader("Módulo 4: Validação dos resultados")
-    st.caption("Conferência final da análise. Cada verificação é calculada pelo app a partir do fonte, sem IA, "
-               "e serve de roteiro para a apresentação.")
+    st.caption("Prova de que o que foi pedido foi testado (e o que foi testado foi pedido), mais um painel técnico "
+               "com as verificações dos módulos 1 a 3.")
     if not calc:
         note("Nenhuma função com parâmetros encontrada: não há unidade para validar.", "warn")
     else:
-        # ---- dados reaproveitados dos módulos anteriores -----------------------
-        mc_v = eg.mccabe(cfg_calc)
-        fluxo_v = eg.unsupported_flow(calc)
-        pares_v = eg.du_pairs(cfg_calc)
-        info_v = eg.defuse_info(cfg_calc)
-        cob_nos = cob_arestas = cob_du = None
-        if resultados:
-            cn_v = {n for r in resultados for n in r["trace"]}
-            ce_v = {e for r in resultados for e in r["edges"]}
-            cob_nos = (len(cn_v), len(cfg_calc.nodes))
-            cob_arestas = (len(ce_v), len(cfg_calc.edges))
-            trs_v = [r["trace"] for r in resultados]
-            cob_du = (sum(any(eg.pair_covered(t, p, info_v) for t in trs_v) for p in pares_v), len(pares_v))
-        ms_v = None
-        if suite:
-            try:
-                ms_v = eg.mutation_score(mutacao_cached(source, calc.name, tuple(c["id"] for c in suite)))
-            except Exception:                                           # noqa: BLE001
-                ms_v = None
-        n_ok_v = sum(r["ok"] is True for r in resultados) if resultados else 0
-        n_bad_v = sum(r["ok"] is False for r in resultados) if resultados else 0
+        base_k = f"{h[:8]}_{calc.name}"
+        ver_k, sug_k = f"rtm_ver_{base_k}", f"rtm_sug_{base_k}"
+        ver = st.session_state.get(ver_k, 0)
+        rtm = None
+        sub_v = st.tabs(["Matriz de rastreabilidade (RTM)", "Painel de validação técnica"])
+        with sub_v[0]:
+            FLUXOS_COL = ("Caminho feliz", "Fluxo alternativo", "Fluxo de exceção")
 
-        def pct(a, b):
-            return f"{a}/{b} ({a / b * 100:.0f}%)" if b else "0/0"
+            def _s(x):
+                return "" if x is None or (isinstance(x, float) and x != x) else str(x).strip()
 
-        # ---- A. validação da análise ---------------------------------------------
-        A = []
-        A.append(("Fonte", "Fonte analisado",
-                  WARN_ if source != original else OK_,
-                  ("Código editado na tela: difere do arquivo (o arquivo em si não é alterado)."
-                   if source != original else
-                   f"Idêntico ao arquivo {origem} (SHA-256 {hashlib.sha256(source.encode('utf-8')).hexdigest()[:10]}).")))
-        A.append(("Módulo 1", "Épsilon coerente com o tipo",
-                  OK_ if ei["epsilon"] == D(1).scaleb(-ei["scale"]) else BAD_,
-                  f"ε = {eps_txt(ei['epsilon'])} para {ei['label']}"))
-        linhas_por_param = [sum(r["Entrada"] == p for r in pce_rows) for p in calc.params]
-        A.append(("Módulo 1", "PCE cobre todos os parâmetros",
-                  OK_ if all(n >= 3 for n in linhas_por_param) else WARN_,
-                  f"{len(calc.params)} parâmetro(s), {len(pce_rows)} classes de equivalência"))
-        quatro = all({p["ponto"] for p in r["points"]} == {"On", "Off", "Interior", "Exterior"} for r in rules)
-        padrao_v = any(r["kind"] == "padrao" for r in rules)
-        A.append(("Módulo 1", "AVL com On, Off, Interior e Exterior",
-                  (WARN_ if padrao_v else OK_) if quatro else BAD_,
-                  (f"{len(rules)} fronteira(s), {4 * len(rules)} pontos"
-                   + ("; fronteira padrão em 0,00 (o código não compara com constante)." if padrao_v else "."))))
-        A.append(("Módulo 1", "Suíte de casos de teste gerada",
-                  OK_ if suite else WARN_,
-                  (f"{len(suite)} casos ({sum(c['tecnica'] == 'PCE' for c in suite)} PCE, "
-                   f"{sum(c['tecnica'] == 'AVL' for c in suite)} AVL)") if suite
-                  else "Unidade não executável pelo interpretador interno (SQL, CALL, texto...)."))
-        A.append(("Módulo 2", "V(G): as três fórmulas concordam",
-                  OK_ if mc_v["consistente"] else BAD_,
-                  f"N={mc_v['N']}, E={mc_v['E']}, P={mc_v['P']}, R={mc_v['R']}, V(G)={mc_v['V_EN']}"))
-        A.append(("Módulo 2", "Fluxo de controle totalmente modelado",
-                  WARN_ if fluxo_v else OK_,
-                  ("Usa " + ", ".join(fluxo_v) + ": V(G) pode estar subestimado.") if fluxo_v else "Sem EXIT/CONTINUE/GOTO."))
-        A.append(("Módulo 2", "Casos de teste ≥ V(G)",
-                  (OK_ if len(suite) >= mc_v["V_EN"] else WARN_) if suite else NA_,
-                  (f"{len(suite)} casos para V(G) = {mc_v['V_EN']}" if suite else "Sem suíte executável.")))
 
-        # ---- B. validação do código sob teste -----------------------------------
-        B = []
-        B.append(("Módulo 1", "Oráculo (regra de negócio) definido",
-                  BAD_ if orc_err else (OK_ if orc_fn else WARN_),
-                  f"Inválido: {orc_err}" if orc_err else ("Definido na aba Execução com oráculo." if orc_fn
-                                                         else "Sem oráculo: os casos não têm aprovado/reprovado.")))
-        B.append(("Módulo 1", "Código respeita o oráculo",
-                  (OK_ if n_bad_v == 0 else BAD_) if (resultados and orc_fn) else NA_,
-                  (f"{n_ok_v} de {len(resultados)} casos passam; {n_bad_v} falham." if (resultados and orc_fn)
-                   else "Defina o oráculo para avaliar.")))
-        B.append(("Módulo 2", "Cobertura de arestas pela suíte",
-                  (OK_ if cob_arestas[0] == cob_arestas[1] else WARN_) if cob_arestas else NA_,
-                  pct(*cob_arestas) if cob_arestas else "Sem suíte executável."))
-        B.append(("Módulo 2", "Cobertura de nós pela suíte",
-                  (OK_ if cob_nos[0] == cob_nos[1] else WARN_) if cob_nos else NA_,
-                  pct(*cob_nos) if cob_nos else "Sem suíte executável."))
-        B.append(("Módulo 3", "Todos-usos (pares definição-uso)",
-                  (OK_ if cob_du[0] == cob_du[1] else WARN_) if cob_du else NA_,
-                  (pct(*cob_du) + ("; pares restantes podem ser infactíveis." if cob_du[0] != cob_du[1] else ""))
-                  if cob_du else "Sem suíte executável."))
-        B.append(("Módulo 3", "Escore de mutação (MS)",
-                  (OK_ if ms_v["MS"] >= 90 else (WARN_ if ms_v["MS"] >= 70 else BAD_)) if ms_v else NA_,
-                  (f"MS = {ms_v['MS']:.1f}% ({ms_v['Md']} mortos de {ms_v['Mt'] - ms_v['Me']} não equivalentes)"
-                   if ms_v else "Sem suíte executável.")))
-        B.append(("Módulo 3", "Mutantes vivos",
-                  (OK_ if (ms_v["Mt"] - ms_v["Me"] - ms_v["Md"]) == 0 else WARN_) if ms_v else NA_,
-                  (f"{ms_v['Mt'] - ms_v['Me'] - ms_v['Md']} sobreviveram" if ms_v else "Sem suíte executável.")))
+            st.markdown("#### 1. Requisitos: o que foi pedido")
+            st.caption("Liste os requisitos do cenário com IDs como REQ01, REQ02… Para o CAD0001 há uma sugestão a partir do manual; "
+                       "ajuste conforme a especificação. Em outros programas, cadastre os seus.")
+            req_default = [{"ID": i, "Requisito": t} for i, t in eg.default_requirements(calc)] or [{"ID": "", "Requisito": ""}]
+            req_ed = st.data_editor(pd.DataFrame(req_default), num_rows="dynamic", hide_index=True, key=f"rtm_req_{base_k}",
+                                    column_config={"ID": st.column_config.TextColumn("ID", width="small"),
+                                                   "Requisito": st.column_config.TextColumn("Requisito", width="large")})
+            reqs_in = [{"id": _s(r.get("ID")), "texto": _s(r.get("Requisito"))} for r in req_ed.to_dict("records") if _s(r.get("ID"))]
 
-        todas = A + B
-        cont = {s: sum(x[2] == s for x in todas) for s in (OK_, WARN_, BAD_, NA_)}
-        k = st.columns(4)
-        k[0].metric("Verificações", len(todas))
-        k[1].metric("Ok ✅", cont[OK_])
-        k[2].metric("Atenção ⚠️", cont[WARN_])
-        k[3].metric("Falhas ❌", cont[BAD_])
+            st.markdown("#### 2. Casos de teste e rastreio: o que foi testado")
+            sug = st.session_state.get(sug_k)
+            cts_in = []
+            if suite:
+                st.caption("Os casos abaixo vêm da suíte caixa-preta (PCE + AVL) e já foram executados. Preencha a coluna "
+                           "**Requisitos** com os IDs que cada caso valida (ex.: `REQ01, REQ03`).")
+                if reqs_in and st.button("Sugerir rastreio com Gemini", key=f"btn_rtm_{base_k}"):
+                    if not api_key.strip():
+                        st.warning("Informe a Gemini API Key (Secrets ou barra lateral).")
+                    else:
+                        txt_ia = None
+                        with st.spinner(f"Consultando {modelo}..."):
+                            try:
+                                lista_cts = "\n".join(f"{c['id']} [{eg.classify_flow(calc, rules, c)}]: {c['descricao']}; entrada {entrada_txt(c['args'])}"
+                                                      for c in suite)
+                                lista_reqs = "\n".join(f"{r['id']}: {r['texto']}" for r in reqs_in)
+                                cliente = genai.Client(api_key=api_key)
+                                txt_ia = cliente.models.generate_content(model=modelo, contents=(
+                                    "Você é um analista de testes. Relacione cada caso de teste aos requisitos que ele ajuda a validar.\n\n"
+                                    f"Requisitos:\n{lista_reqs}\n\nCasos de teste:\n{lista_cts}\n\n"
+                                    'Responda SOMENTE com um JSON no formato {"CT01": ["REQ01"], "CT02": ["REQ02", "REQ03"]}, '
+                                    "usando apenas os IDs listados. Omita casos que não se relacionem a nenhum requisito.")).text
+                            except Exception as ex:  # noqa: BLE001
+                                st.error(f"Erro ao chamar a Gemini API ({modelo}): {ex}")
+                        if txt_ia is not None:
+                            mapa = eg.parse_trace_json(txt_ia, [r["id"] for r in reqs_in], [c["id"] for c in suite])
+                            if mapa:
+                                st.session_state[sug_k] = mapa
+                                st.session_state[ver_k] = ver + 1
+                                st.rerun()
+                            else:
+                                st.warning("A IA não devolveu um rastreio utilizável; mantive o atual.")
+                if sug is not None:
+                    note("Rastreio sugerido pela IA: revise cada linha antes de usar. A IA não substitui o seu critério.", "info")
+                linhas = []
+                for c in suite:
+                    fl = eg.classify_flow(calc, rules, c)
+                    refs = ", ".join(sug.get(c["id"], [])) if sug is not None else eg.default_trace(calc, c, fl)
+                    linhas.append({"ID": c["id"], "Fluxo": fl, "Descrição": c["descricao"], "Requisitos": refs})
+                tr_ed = st.data_editor(pd.DataFrame(linhas), hide_index=True, disabled=["ID", "Fluxo", "Descrição"],
+                                       key=f"rtm_tr_{base_k}_{ver}")
+                res_map = {r["id"]: {True: "Passou", False: "Falhou", None: "Sem oráculo"}[r["ok"]] for r in (resultados or [])}
+                for r in tr_ed.to_dict("records"):
+                    cts_in.append({"id": r["ID"], "tipo": r["Fluxo"], "descricao": r["Descrição"], "reqs": _s(r.get("Requisitos")),
+                                   "resultado": res_map.get(r["ID"], "Não executado")})
+            else:
+                note("A unidade não gera casos executáveis (usa SQL, CALL, texto...). Cadastre os casos de teste manualmente abaixo.", "info")
 
-        falhas_v = [x[1] for x in todas if x[2] == BAD_]
-        avisos_v = [x[1] for x in todas if x[2] == WARN_]
-        if falhas_v:
-            note("<b>Há falhas a tratar:</b> " + "; ".join(falhas_v) + ". Se forem falhas do código sob teste "
-                 "(oráculo, mutação), elas indicam defeitos encontrados; se forem da análise, revise o fonte.", "bad")
-        elif avisos_v:
-            note("<b>Análise válida com ressalvas:</b> " + "; ".join(avisos_v) + ".", "warn")
-        else:
-            note("<b>Tudo validado:</b> a análise é consistente e o código passa em todas as verificações.")
+            st.markdown("#### 3. Casos de teste manuais (opcional)")
+            st.caption("Para requisitos que o app não executa (tela, e-mail, banco de dados...). Informe o fluxo, os requisitos e o resultado.")
+            man_ed = st.data_editor(
+                pd.DataFrame({"ID": pd.Series(dtype="str"), "Fluxo": pd.Series(dtype="str"), "Descrição": pd.Series(dtype="str"),
+                              "Requisitos": pd.Series(dtype="str"), "Resultado": pd.Series(dtype="str")}),
+                num_rows="dynamic", hide_index=True, key=f"rtm_man_{base_k}",
+                column_config={"Fluxo": st.column_config.SelectboxColumn("Fluxo", options=list(eg.FLUXOS)),
+                               "Resultado": st.column_config.SelectboxColumn("Resultado", options=["Passou", "Falhou", "Não executado"])})
+            for r in man_ed.to_dict("records"):
+                if _s(r.get("ID")):
+                    cts_in.append({"id": _s(r.get("ID")), "tipo": _s(r.get("Fluxo")), "descricao": _s(r.get("Descrição")),
+                                   "reqs": _s(r.get("Requisitos")), "resultado": _s(r.get("Resultado")) or "Não executado"})
 
-        df_cols = ["Módulo", "Verificação", "Status", "Detalhe"]
-        st.markdown("#### Validação da análise (a ferramenta é consistente?)")
-        st.dataframe(pd.DataFrame(A, columns=df_cols), hide_index=True)
-        st.markdown("#### Validação do código sob teste (o código está bem testado e correto?)")
-        st.dataframe(pd.DataFrame(B, columns=df_cols), hide_index=True)
+            rtm = eg.build_rtm(reqs_in, cts_in)
+            st.markdown("#### 4. Matriz de Rastreabilidade de Requisitos (RTM)")
+            if not rtm["req_ids"]:
+                note("Cadastre ao menos um requisito (passo 1) para montar a matriz.", "info")
+            else:
+                fwd, bwd = rtm["fwd"], rtm["bwd"]
+                n_val = sum(r["situacao"] == "Validado" for r in rtm["req_rows"])
+                k = st.columns(5)
+                k[0].metric("Requisitos", len(rtm["req_ids"]))
+                k[1].metric("Casos de teste", len(rtm["ct_ids"]))
+                k[2].metric("Requisitos cobertos", f"{fwd[0]}/{fwd[1]}", f"{fwd[0] / fwd[1] * 100:.0f}%" if fwd[1] else None)
+                k[3].metric("Requisitos validados", f"{n_val}/{fwd[1]}", f"{n_val / fwd[1] * 100:.0f}%" if fwd[1] else None)
+                k[4].metric("CTs rastreados", f"{bwd[0]}/{bwd[1]}", f"{bwd[0] / bwd[1] * 100:.0f}%" if bwd[1] else None)
 
-        # ---- resumo para a apresentação -------------------------------------------
-        st.markdown("#### Resumo para a apresentação")
-        resumo_m1 = (f"Unidade `{calc.name}({', '.join(calc.params)})`; ε = {eps_txt(ei['epsilon'])} ({ei['label']}); "
-                     f"{len(pce_rows)} classes de equivalência; {len(rules)} fronteira(s) com {4 * len(rules)} pontos de AVL"
-                     + (f"; {len(suite)} casos de teste, {n_ok_v} passam e {n_bad_v} falham." if resultados and orc_fn
-                        else (f"; {len(suite)} casos de teste." if suite else ".")))
-        resumo_m2 = (f"V(G) = {mc_v['V_EN']} (N = {mc_v['N']}, E = {mc_v['E']}, P = {mc_v['P']}, R = {mc_v['R']}); "
-                     f"as três fórmulas de McCabe {'concordam' if mc_v['consistente'] else 'divergem'}."
-                     + (f" A suíte cobre {pct(*cob_arestas)} das arestas." if cob_arestas else ""))
-        resumo_m3 = (f"{len(pares_v)} pares definição-uso"
-                     + (f"; todos-usos cobertos {pct(*cob_du)}" if cob_du else "")
-                     + (f"; escore de mutação {ms_v['MS']:.1f}% ({ms_v['Md']} de {ms_v['Mt'] - ms_v['Me']} mutantes mortos)."
-                        if ms_v else "."))
-        st.markdown(f"- **Módulo 1 (caixa-preta):** {resumo_m1}\n- **Módulo 2 (caixa-branca):** {resumo_m2}\n"
-                    f"- **Módulo 3 (fluxo de dados e mutação):** {resumo_m3}")
+                sem = [r["id"] for r in rtm["req_rows"] if not r["n_cts"]]
+                if sem:
+                    note("<b>Tudo o que foi pedido foi coberto? Não.</b> Requisitos sem nenhum caso de teste: " + ", ".join(sem) + ".", "bad")
+                else:
+                    note("<b>Tudo o que foi pedido foi coberto? Sim.</b> Todo requisito tem ao menos um caso de teste.")
+                if rtm["orphans"] or rtm["unknown"]:
+                    partes = []
+                    if rtm["orphans"]:
+                        partes.append("casos sem requisito: " + ", ".join(rtm["orphans"]))
+                    if rtm["unknown"]:
+                        partes.append("referências a requisitos inexistentes: " + "; ".join(f"{a} → {', '.join(b)}" for a, b in rtm["unknown"].items()))
+                    note("<b>Tudo o que foi testado foi pedido? Não.</b> " + "; ".join(partes) + ".", "warn")
+                else:
+                    note("<b>Tudo o que foi testado foi pedido? Sim.</b> Todo caso de teste está ligado a um requisito existente.")
+                if rtm["dup_reqs"] or rtm["dup_cts"]:
+                    note("IDs repetidos foram ignorados: " + ", ".join(rtm["dup_reqs"] + rtm["dup_cts"]) + ".", "warn")
 
-        md = [f"# Relatório de validação: {origem}", "",
-              f"Unidade sob teste: `{calc.name}({', '.join(calc.params)})`", "",
-              "## Validação da análise", "", "| Módulo | Verificação | Status | Detalhe |", "|---|---|---|---|"]
-        md += [f"| {m} | {v} | {s} | {d} |" for m, v, s, d in A]
-        md += ["", "## Validação do código sob teste", "", "| Módulo | Verificação | Status | Detalhe |", "|---|---|---|---|"]
-        md += [f"| {m} | {v} | {s} | {d} |" for m, v, s, d in B]
-        md += ["", "## Resumo", "", f"- Módulo 1: {resumo_m1}", f"- Módulo 2: {resumo_m2}", f"- Módulo 3: {resumo_m3}", ""]
-        relatorio_md = "\n".join(md)
-        st.download_button("⬇️ Baixar relatório de validação (.md)", relatorio_md.encode("utf-8"),
-                           "relatorio_validacao.md", "text/markdown")
+                icones = {"Validado": "✅ Validado", "Coberto, com falha": "❌ Coberto, com falha",
+                          "Coberto, sem resultado": "⚠️ Coberto, sem resultado", "Sem cobertura": "🔴 Sem cobertura"}
+                df_req = pd.DataFrame([{"Requisito": r["id"], "Descrição": r["texto"], "Nº de CTs": r["n_cts"],
+                                        "Situação": icones[r["situacao"]],
+                                        FLUXOS_COL[0]: "✔" if r["feliz"] else "—", FLUXOS_COL[1]: "✔" if r["alternativo"] else "—",
+                                        FLUXOS_COL[2]: "✔" if r["excecao"] else "—"}
+                                       for r in rtm["req_rows"]])
+                st.dataframe(df_req, hide_index=True)
+                st.markdown("**Matriz** (linhas = requisitos, colunas = casos de teste; ● = o caso valida o requisito)")
+                df_m = pd.DataFrame({ct: ["●" if rtm["matrix"][rid][ct] else "" for rid in rtm["req_ids"]] for ct in rtm["ct_ids"]},
+                                    index=rtm["req_ids"])
+                st.dataframe(df_m)
+                df_m_csv = df_m.copy()
+                df_m_csv.insert(0, "Requisito", df_m_csv.index)
+                st.download_button("⬇️ Baixar a matriz (CSV)", df_csv(df_m_csv), "matriz_rastreabilidade.csv", "text/csv")
+        with sub_v[1]:
+            # ---- dados reaproveitados dos módulos anteriores -----------------------
+            mc_v = eg.mccabe(cfg_calc)
+            fluxo_v = eg.unsupported_flow(calc)
+            pares_v = eg.du_pairs(cfg_calc)
+            info_v = eg.defuse_info(cfg_calc)
+            cob_nos = cob_arestas = cob_du = None
+            if resultados:
+                cn_v = {n for r in resultados for n in r["trace"]}
+                ce_v = {e for r in resultados for e in r["edges"]}
+                cob_nos = (len(cn_v), len(cfg_calc.nodes))
+                cob_arestas = (len(ce_v), len(cfg_calc.edges))
+                trs_v = [r["trace"] for r in resultados]
+                cob_du = (sum(any(eg.pair_covered(t, p, info_v) for t in trs_v) for p in pares_v), len(pares_v))
+            ms_v = None
+            if suite:
+                try:
+                    ms_v = eg.mutation_score(mutacao_cached(source, calc.name, tuple(c["id"] for c in suite)))
+                except Exception:                                           # noqa: BLE001
+                    ms_v = None
+            n_ok_v = sum(r["ok"] is True for r in resultados) if resultados else 0
+            n_bad_v = sum(r["ok"] is False for r in resultados) if resultados else 0
 
-        parecer_ia("m4", f"""Você é um especialista em teste de software. Com base no relatório de validação abaixo,
-calculado por uma ferramenta determinística, escreva em português: (1) um roteiro de apresentação (pitch) de cerca
-de 2 minutos, com um parágrafo por módulo; (2) as principais limitações e riscos da análise; (3) o que você
-validaria a mais antes de confiar no resultado. Não invente números que não estejam no relatório.
+            def pct(a, b):
+                return f"{a}/{b} ({a / b * 100:.0f}%)" if b else "0/0"
 
-{relatorio_md}""")
+            # ---- A. validação da análise ---------------------------------------------
+            A = []
+            A.append(("Fonte", "Fonte analisado",
+                      WARN_ if source != original else OK_,
+                      ("Código editado na tela: difere do arquivo (o arquivo em si não é alterado)."
+                       if source != original else
+                       f"Idêntico ao arquivo {origem} (SHA-256 {hashlib.sha256(source.encode('utf-8')).hexdigest()[:10]}).")))
+            A.append(("Módulo 1", "Épsilon coerente com o tipo",
+                      OK_ if ei["epsilon"] == D(1).scaleb(-ei["scale"]) else BAD_,
+                      f"ε = {eps_txt(ei['epsilon'])} para {ei['label']}"))
+            linhas_por_param = [sum(r["Entrada"] == p for r in pce_rows) for p in calc.params]
+            A.append(("Módulo 1", "PCE cobre todos os parâmetros",
+                      OK_ if all(n >= 3 for n in linhas_por_param) else WARN_,
+                      f"{len(calc.params)} parâmetro(s), {len(pce_rows)} classes de equivalência"))
+            quatro = all({p["ponto"] for p in r["points"]} == {"On", "Off", "Interior", "Exterior"} for r in rules)
+            padrao_v = any(r["kind"] == "padrao" for r in rules)
+            A.append(("Módulo 1", "AVL com On, Off, Interior e Exterior",
+                      (WARN_ if padrao_v else OK_) if quatro else BAD_,
+                      (f"{len(rules)} fronteira(s), {4 * len(rules)} pontos"
+                       + ("; fronteira padrão em 0,00 (o código não compara com constante)." if padrao_v else "."))))
+            A.append(("Módulo 1", "Suíte de casos de teste gerada",
+                      OK_ if suite else WARN_,
+                      (f"{len(suite)} casos ({sum(c['tecnica'] == 'PCE' for c in suite)} PCE, "
+                       f"{sum(c['tecnica'] == 'AVL' for c in suite)} AVL)") if suite
+                      else "Unidade não executável pelo interpretador interno (SQL, CALL, texto...)."))
+            A.append(("Módulo 2", "V(G): as três fórmulas concordam",
+                      OK_ if mc_v["consistente"] else BAD_,
+                      f"N={mc_v['N']}, E={mc_v['E']}, P={mc_v['P']}, R={mc_v['R']}, V(G)={mc_v['V_EN']}"))
+            A.append(("Módulo 2", "Fluxo de controle totalmente modelado",
+                      WARN_ if fluxo_v else OK_,
+                      ("Usa " + ", ".join(fluxo_v) + ": V(G) pode estar subestimado.") if fluxo_v else "Sem EXIT/CONTINUE/GOTO."))
+            A.append(("Módulo 2", "Casos de teste ≥ V(G)",
+                      (OK_ if len(suite) >= mc_v["V_EN"] else WARN_) if suite else NA_,
+                      (f"{len(suite)} casos para V(G) = {mc_v['V_EN']}" if suite else "Sem suíte executável.")))
+
+            # ---- B. validação do código sob teste -----------------------------------
+            B = []
+            B.append(("Módulo 1", "Oráculo (regra de negócio) definido",
+                      BAD_ if orc_err else (OK_ if orc_fn else WARN_),
+                      f"Inválido: {orc_err}" if orc_err else ("Definido na aba Execução com oráculo." if orc_fn
+                                                             else "Sem oráculo: os casos não têm aprovado/reprovado.")))
+            B.append(("Módulo 1", "Código respeita o oráculo",
+                      (OK_ if n_bad_v == 0 else BAD_) if (resultados and orc_fn) else NA_,
+                      (f"{n_ok_v} de {len(resultados)} casos passam; {n_bad_v} falham." if (resultados and orc_fn)
+                       else "Defina o oráculo para avaliar.")))
+            B.append(("Módulo 2", "Cobertura de arestas pela suíte",
+                      (OK_ if cob_arestas[0] == cob_arestas[1] else WARN_) if cob_arestas else NA_,
+                      pct(*cob_arestas) if cob_arestas else "Sem suíte executável."))
+            B.append(("Módulo 2", "Cobertura de nós pela suíte",
+                      (OK_ if cob_nos[0] == cob_nos[1] else WARN_) if cob_nos else NA_,
+                      pct(*cob_nos) if cob_nos else "Sem suíte executável."))
+            B.append(("Módulo 3", "Todos-usos (pares definição-uso)",
+                      (OK_ if cob_du[0] == cob_du[1] else WARN_) if cob_du else NA_,
+                      (pct(*cob_du) + ("; pares restantes podem ser infactíveis." if cob_du[0] != cob_du[1] else ""))
+                      if cob_du else "Sem suíte executável."))
+            B.append(("Módulo 3", "Escore de mutação (MS)",
+                      (OK_ if ms_v["MS"] >= 90 else (WARN_ if ms_v["MS"] >= 70 else BAD_)) if ms_v else NA_,
+                      (f"MS = {ms_v['MS']:.1f}% ({ms_v['Md']} mortos de {ms_v['Mt'] - ms_v['Me']} não equivalentes)"
+                       if ms_v else "Sem suíte executável.")))
+            B.append(("Módulo 3", "Mutantes vivos",
+                      (OK_ if (ms_v["Mt"] - ms_v["Me"] - ms_v["Md"]) == 0 else WARN_) if ms_v else NA_,
+                      (f"{ms_v['Mt'] - ms_v['Me'] - ms_v['Md']} sobreviveram" if ms_v else "Sem suíte executável.")))
+
+            todas = A + B
+            cont = {s: sum(x[2] == s for x in todas) for s in (OK_, WARN_, BAD_, NA_)}
+            k = st.columns(4)
+            k[0].metric("Verificações", len(todas))
+            k[1].metric("Ok ✅", cont[OK_])
+            k[2].metric("Atenção ⚠️", cont[WARN_])
+            k[3].metric("Falhas ❌", cont[BAD_])
+
+            falhas_v = [x[1] for x in todas if x[2] == BAD_]
+            avisos_v = [x[1] for x in todas if x[2] == WARN_]
+            if falhas_v:
+                note("<b>Há falhas a tratar:</b> " + "; ".join(falhas_v) + ". Se forem falhas do código sob teste "
+                     "(oráculo, mutação), elas indicam defeitos encontrados; se forem da análise, revise o fonte.", "bad")
+            elif avisos_v:
+                note("<b>Análise válida com ressalvas:</b> " + "; ".join(avisos_v) + ".", "warn")
+            else:
+                note("<b>Tudo validado:</b> a análise é consistente e o código passa em todas as verificações.")
+
+            df_cols = ["Módulo", "Verificação", "Status", "Detalhe"]
+            st.markdown("#### Validação da análise (a ferramenta é consistente?)")
+            st.dataframe(pd.DataFrame(A, columns=df_cols), hide_index=True)
+            st.markdown("#### Validação do código sob teste (o código está bem testado e correto?)")
+            st.dataframe(pd.DataFrame(B, columns=df_cols), hide_index=True)
+
+            # ---- resumo para a apresentação -------------------------------------------
+            st.markdown("#### Resumo para a apresentação")
+            resumo_m1 = (f"Unidade `{calc.name}({', '.join(calc.params)})`; ε = {eps_txt(ei['epsilon'])} ({ei['label']}); "
+                         f"{len(pce_rows)} classes de equivalência; {len(rules)} fronteira(s) com {4 * len(rules)} pontos de AVL"
+                         + (f"; {len(suite)} casos de teste, {n_ok_v} passam e {n_bad_v} falham." if resultados and orc_fn
+                            else (f"; {len(suite)} casos de teste." if suite else ".")))
+            resumo_m2 = (f"V(G) = {mc_v['V_EN']} (N = {mc_v['N']}, E = {mc_v['E']}, P = {mc_v['P']}, R = {mc_v['R']}); "
+                         f"as três fórmulas de McCabe {'concordam' if mc_v['consistente'] else 'divergem'}."
+                         + (f" A suíte cobre {pct(*cob_arestas)} das arestas." if cob_arestas else ""))
+            resumo_m3 = (f"{len(pares_v)} pares definição-uso"
+                         + (f"; todos-usos cobertos {pct(*cob_du)}" if cob_du else "")
+                         + (f"; escore de mutação {ms_v['MS']:.1f}% ({ms_v['Md']} de {ms_v['Mt'] - ms_v['Me']} mutantes mortos)."
+                            if ms_v else "."))
+            st.markdown(f"- **Módulo 1 (caixa-preta):** {resumo_m1}\n- **Módulo 2 (caixa-branca):** {resumo_m2}\n"
+                        f"- **Módulo 3 (fluxo de dados e mutação):** {resumo_m3}")
+
+            md = [f"# Relatório de validação: {origem}", "",
+                  f"Unidade sob teste: `{calc.name}({', '.join(calc.params)})`", "",
+                  "## Validação da análise", "", "| Módulo | Verificação | Status | Detalhe |", "|---|---|---|---|"]
+            md += [f"| {m} | {v} | {s} | {d} |" for m, v, s, d in A]
+            md += ["", "## Validação do código sob teste", "", "| Módulo | Verificação | Status | Detalhe |", "|---|---|---|---|"]
+            md += [f"| {m} | {v} | {s} | {d} |" for m, v, s, d in B]
+            md += ["", "## Resumo", "", f"- Módulo 1: {resumo_m1}", f"- Módulo 2: {resumo_m2}", f"- Módulo 3: {resumo_m3}", ""]
+            relatorio_md = "\n".join(md) + "\n" + eg.rtm_markdown(rtm)
+            st.download_button("⬇️ Baixar relatório de validação (.md)", relatorio_md.encode("utf-8"),
+                               "relatorio_validacao.md", "text/markdown")
+
+            parecer_ia("m4", f"""Você é um especialista em teste de software. Com base no relatório de validação abaixo,
+    calculado por uma ferramenta determinística, escreva em português: (1) um roteiro de apresentação (pitch) de cerca
+    de 2 minutos, com um parágrafo por módulo; (2) as principais limitações e riscos da análise; (3) o que você
+    validaria a mais antes de confiar no resultado. Não invente números que não estejam no relatório.
+
+    {relatorio_md}""")
 
 st.divider()
 st.caption("TestingStudio Web")
