@@ -26,108 +26,143 @@ st.set_page_config(page_title="TestingStudio Web", page_icon="🧪", layout="wid
 st.markdown(
     """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 /* Cores que acompanham o tema ativo do Streamlit (claro ou escuro): o Streamlit
    define color-scheme em .stApp e light-dark() escolhe o valor certo. */
 :root {
-  --line: rgba(127,127,127,.32); --surface: rgba(127,127,127,.07);
-  --ok: light-dark(#0E7C66, #4FD6B4); --bad: light-dark(#B8323F, #FF8A95);
-  --warn: light-dark(#8A5A00, #F2BE5C); --info: light-dark(#2F5BA8, #8FB5FF);
-  --ok-bg: light-dark(#EAF5F2, rgba(79,214,180,.13));
-  --bad-bg: light-dark(#FBECEE, rgba(255,138,149,.13));
-  --warn-bg: light-dark(#FBF3E3, rgba(242,190,92,.13));
-  --info-bg: light-dark(#EBF0F9, rgba(143,181,255,.13));
-  --accent: light-dark(#178A74, #2BB596);
+  --bg: light-dark(#F2F2F7, #0C0C11);
+  --surface: light-dark(#FFFFFF, #15151C);
+  --side: light-dark(#E6E6EF, #101016);
+  --ink: light-dark(#14141B, #EDEDF4);
+  --line: light-dark(rgba(20,20,27,.24), rgba(237,237,244,.20));
+  --line-strong: light-dark(#14141B, #4A4A5C);
+  --accent: light-dark(#D9480F, #FF8A4C);
+  --on-accent: light-dark(#FFFFFF, #1A0E06);
+  --ok: light-dark(#0B7A4F, #3DDC97); --bad: light-dark(#C0183F, #FF6B8B);
+  --warn: light-dark(#8F5600, #FFC857); --info: light-dark(#2253B8, #86B4FF);
+  --ok-bg: light-dark(#E3F4EC, rgba(61,220,151,.12));
+  --bad-bg: light-dark(#FBE7EC, rgba(255,107,139,.12));
+  --warn-bg: light-dark(#FBF0DB, rgba(255,200,87,.12));
+  --info-bg: light-dark(#E6EEFB, rgba(134,180,255,.12));
 }
 @supports not (color: light-dark(#000, #fff)) {
   :root {
-    --ok: #0E7C66; --bad: #B8323F; --warn: #8A5A00; --info: #2F5BA8;
-    --ok-bg: #EAF5F2; --bad-bg: #FBECEE; --warn-bg: #FBF3E3; --info-bg: #EBF0F9; --accent: #178A74;
+    --bg: #F2F2F7; --surface: #FFFFFF; --side: #E6E6EF; --ink: #14141B; --line: rgba(20,20,27,.24);
+    --line-strong: #14141B; --accent: #D9480F; --on-accent: #FFFFFF;
+    --ok: #0B7A4F; --bad: #C0183F; --warn: #8F5600; --info: #2253B8;
+    --ok-bg: #E3F4EC; --bad-bg: #FBE7EC; --warn-bg: #FBF0DB; --info-bg: #E6EEFB;
   }
 }
+.stApp {background: var(--bg);}
+[data-testid="stHeader"] {background: transparent;}
 .stApp, [data-testid="stSidebar"] {
-  font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
-h1, h2, h3, h4 {
-  font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif;
-  color: inherit; letter-spacing: -.01em;
+h1, h2, h3 {
+  font-family: 'Syne', 'Trebuchet MS', system-ui, sans-serif;
+  color: inherit; letter-spacing: -.015em; font-weight: 700;
 }
+h4 {font-family: 'Instrument Sans', system-ui, sans-serif; color: inherit; font-weight: 700; letter-spacing: -.005em;}
 code, pre, textarea, [data-testid="stCode"] {
-  font-family: 'IBM Plex Mono', ui-monospace, Consolas, monospace !important;
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace !important;
 }
-textarea {font-size: .86rem !important; line-height: 1.5 !important;}
+textarea {font-size: .84rem !important; line-height: 1.5 !important;}
 .block-container {padding-top: 5rem !important; max-width: 1240px;}
 footer {visibility: hidden;}
 
-/* Cabeçalho com a régua de fronteira */
-.ts-head {display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
-          gap: 20px 40px; background: var(--surface); border: 1px solid var(--line);
-          border-radius: 10px; padding: 22px 28px; margin-bottom: 18px;}
-div.ts-head h1 {margin: 0 0 6px 0; padding: 0; font-size: 2.15rem; line-height: 1.1; color: inherit;}
-div.ts-head p {margin: 0; color: inherit; opacity: .75; font-size: .98rem; max-width: 46ch;}
-.ts-ruler {position: relative; width: min(380px, 100%); height: 72px; flex: 0 1 380px;}
-.ts-track {position: absolute; left: 0; right: 0; top: 6px; height: 30px; display: flex;
-           border: 1px solid var(--line); border-radius: 4px; overflow: hidden;}
-.ts-inv {flex: 1; background: repeating-linear-gradient(135deg,
-         color-mix(in srgb, var(--bad) 30%, transparent) 0 5px,
-         color-mix(in srgb, var(--bad) 9%, transparent) 5px 10px);}
-.ts-val {flex: 1; background-color: color-mix(in srgb, var(--ok) 13%, transparent);
-         background-image: linear-gradient(90deg, color-mix(in srgb, var(--ok) 50%, transparent) 1px, transparent 1px);
-         background-size: 10px 100%;}
-.ts-mark {position: absolute; top: 0; height: 42px; width: 2px; transform: translateX(-50%);}
-.ts-mark span {position: absolute; top: 46px; left: 50%; transform: translateX(-50%);
-               font: 500 .8rem 'IBM Plex Mono', ui-monospace, monospace; white-space: nowrap;}
-.ts-mark.off {left: 36%; background: var(--bad); color: var(--bad);}
-.ts-mark.on  {left: 50%; width: 3px; background: currentColor; color: inherit;}
-.ts-mark.in  {left: 64%; background: var(--ok); color: var(--ok);}
-.ts-zone {position: absolute; top: 46px; font-size: .74rem; opacity: .7;}
-.ts-zone.l {left: 0;} .ts-zone.r {right: 0;}
+/* Cabeçalho: bloco escuro com o degrau da fronteira */
+.ts-head {--h-ok: #3DDC97; --h-bad: #FF6B8B; --h-fg: #F2F2F7;
+          display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+          gap: 24px 48px; background: #14141B; color: var(--h-fg);
+          border: 1.5px solid var(--line-strong); border-left: 8px solid var(--accent); border-radius: 2px;
+          padding: 26px 30px 30px; margin-bottom: 24px; box-shadow: 5px 5px 0 var(--accent);}
+div.ts-head h1 {margin: 0 0 8px 0; padding: 0; font-size: 2.5rem; line-height: 1.05; font-weight: 800; color: var(--h-fg);}
+div.ts-head p {margin: 0; color: #B7B7CA; font-size: .98rem; max-width: 44ch;}
+.ts-step {position: relative; width: min(400px, 100%); flex: 0 1 400px; padding-bottom: 34px;}
+.ts-bars {display: flex; align-items: flex-end; gap: 5px; height: 58px;}
+.ts-bars .b {display: block; flex: 1; position: relative; border-radius: 1px; font-style: normal;}
+.ts-bars .b.inv {height: 30%; background: var(--h-bad); opacity: .55;}
+.ts-bars .b.val {height: 86%; background: var(--h-ok); opacity: .85;}
+.ts-bars .b.mk {opacity: 1;}
+.ts-bars .b.mk.on {height: 100%; background: var(--h-fg);}
+.ts-bars .b.mk em {position: absolute; top: calc(100% + 9px); left: 50%; transform: translateX(-50%);
+                   font: 500 .78rem 'JetBrains Mono', ui-monospace, monospace; font-style: normal;
+                   white-space: nowrap; color: var(--h-fg);}
+.ts-bars .b.mk.off em {color: var(--h-bad);}
+.ts-bars .b.mk.in em {color: var(--h-ok);}
+.ts-cap {position: absolute; bottom: 0; font-size: .72rem; color: #9A9AB0;}
+.ts-cap.l {left: 0;} .ts-cap.r {right: 0;}
 
 /* Avisos */
-.note {border-left: 3px solid var(--ok); background: var(--ok-bg); padding: 10px 14px;
-       border-radius: 6px; color: inherit; margin: 6px 0 14px 0; font-size: .93rem; line-height: 1.5;}
+.note {border: 1.5px solid var(--ok); background: var(--ok-bg); padding: 10px 14px;
+       border-radius: 2px; color: inherit; margin: 6px 0 14px 0; font-size: .93rem; line-height: 1.5;}
 .note.warn {border-color: var(--warn); background: var(--warn-bg);}
 .note.bad  {border-color: var(--bad);  background: var(--bad-bg);}
 .note.info {border-color: var(--info); background: var(--info-bg);}
 
-/* Métricas, abas, botões, expansores */
-[data-testid="stMetric"] {background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
-                          padding: 12px 16px; box-shadow: none;}
-[data-testid="stMetricLabel"] {opacity: .75; font-size: .82rem;}
-[data-testid="stMetricValue"] {font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 500; color: inherit;
-                               font-size: 1.3rem;}
+/* Métricas, abas, botões, campos, tabelas, expansores */
+[data-testid="stMetric"] {background: var(--surface); border: 1.5px solid var(--line); border-left: 6px solid var(--accent);
+                          border-radius: 2px; padding: 12px 16px; box-shadow: none;}
+[data-testid="stMetricLabel"] {opacity: .75;}
+[data-testid="stMetricLabel"] p {text-transform: uppercase; letter-spacing: .05em; font-size: .72rem;}
+[data-testid="stMetricValue"] {font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 500; color: inherit;
+                               font-size: clamp(.9rem, 1.15vw, 1.3rem);}
 [data-testid="stMetricValue"], [data-testid="stMetricValue"] > div {white-space: normal !important;
                                overflow: visible !important; text-overflow: clip !important; overflow-wrap: anywhere;}
-.stTabs [data-baseweb="tab-list"] {gap: 2px;}
-.stTabs [data-baseweb="tab"] {font-weight: 600; padding: 8px 14px; color: inherit; opacity: .65;}
-.stTabs [data-baseweb="tab"][aria-selected="true"] {opacity: 1;}
-.stTabs [data-baseweb="tab-highlight"] {background-color: var(--accent) !important;}
-.stTabs [data-baseweb="tab-border"] {background-color: var(--line) !important;}
-.stButton > button, .stDownloadButton > button {border-radius: 6px; font-weight: 600; border-color: var(--line);}
+.stTabs [role="tablist"] {gap: 4px !important; row-gap: 6px !important; border-bottom: none !important;
+                           box-shadow: none !important; background: transparent !important;
+                           flex-wrap: wrap !important; overflow: visible !important;}
+.stTabs [class*="SelectionIndicator"] {display: none !important;}
+.stTabs [role="tablist"]::before, .stTabs [role="tablist"]::after {display: none !important;}
+.stTabs [role="tab"] {height: auto !important; padding: 6px 10px !important;
+    border: 1.5px solid var(--line) !important; border-radius: 2px !important; background: transparent !important;
+    opacity: 1 !important; margin: 0 !important; box-shadow: none !important;}
+.stTabs [role="tab"]::before, .stTabs [role="tab"]::after {display: none !important; background: transparent !important;
+    border-color: transparent !important; height: 0 !important;}
+.stTabs [role="tab"] p {color: inherit !important; font-weight: 600 !important; font-size: .86rem !important;}
+.stTabs [role="tab"][aria-selected="true"] {background: var(--ink) !important; border-color: var(--ink) !important;}
+.stTabs [role="tab"][aria-selected="true"] p {color: var(--bg) !important;}
+.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {display: none !important;}
+.stButton > button, .stDownloadButton > button {border-radius: 2px; font-weight: 600; border: 1.5px solid var(--line-strong);}
 [data-testid="stBaseButton-primary"], button[kind="primary"] {background: var(--accent) !important;
-    border-color: var(--accent) !important; color: #fff !important;}
-[data-testid="stExpander"] {border: 1px solid var(--line); border-radius: 8px; background: transparent;}
+    border-color: var(--accent) !important; color: var(--on-accent) !important;}
+[data-testid="stBaseButton-primary"] p, button[kind="primary"] p {color: inherit !important;}
+[data-baseweb="input"], [data-baseweb="textarea"], [data-baseweb="select"] > div {border-radius: 2px !important;}
+[data-testid="stAlert"] {border-radius: 2px;}
+[data-testid="stDataFrame"] {border: 1.5px solid var(--line-strong); border-radius: 2px; overflow: hidden;}
+[data-testid="stExpander"] {border: 1.5px solid var(--line-strong); border-radius: 2px; background: transparent;}
 [data-testid="stExpander"] details, [data-testid="stExpander"] summary {background: transparent;}
-section[data-testid="stSidebar"] {border-right: 1px solid var(--line);}
+section[data-testid="stSidebar"], [data-testid="stSidebarContent"] {background: var(--side);}
+section[data-testid="stSidebar"] {border-right: 1.5px solid var(--line-strong);}
 </style>
 """,
     unsafe_allow_html=True,
 )
 
+
+def _barras_degrau():
+    marcas = {7: ("off", "X − ε"), 11: ("on", "X"), 15: ("in", "X + ε")}
+    out = []
+    for i in range(22):
+        lado = "inv" if i < 11 else "val"
+        if i in marcas:
+            cls, rot = marcas[i]
+            out.append(f'<i class="b {lado} mk {cls}"><em>{rot}</em></i>')
+        else:
+            out.append(f'<i class="b {lado}"></i>')
+    return "".join(out)
+
+
 st.markdown(
-    """
+    f"""
 <div class="ts-head">
 <div>
 <h1>TestingStudio Web</h1>
 <p>Auditoria automatizada de testes de software: caixa-preta, caixa-branca, fluxo de dados e mutação.</p>
 </div>
-<div class="ts-ruler" role="img" aria-label="Régua de fronteira: região inválida à esquerda, região válida à direita, com os pontos X menos épsilon, X e X mais épsilon">
-<div class="ts-track"><div class="ts-inv"></div><div class="ts-val"></div></div>
-<div class="ts-mark off"><span>X − ε</span></div>
-<div class="ts-mark on"><span>X</span></div>
-<div class="ts-mark in"><span>X + ε</span></div>
-<div class="ts-zone l">inválido</div>
-<div class="ts-zone r">válido</div>
+<div class="ts-step" role="img" aria-label="Degrau de fronteira: região inválida à esquerda, região válida à direita, com os pontos X menos épsilon, X e X mais épsilon">
+<div class="ts-bars">{_barras_degrau()}</div>
+<span class="ts-cap l">inválido</span><span class="ts-cap r">válido</span>
 </div>
 </div>
 """,
@@ -454,16 +489,16 @@ with tabs[1]:
             ordem = list(pts.sort_values("Valor")["Ponto"])
             base = alt.Chart(pts)
             linha = alt.Chart(pd.DataFrame({"x": [float(rsel["c"])]})).mark_rule(
-                strokeDash=[6, 4], color="#8795AE", size=2).encode(x="x:Q")
+                strokeDash=[6, 4], color="#8D8DA3", size=2).encode(x="x:Q")
             bolas = base.mark_circle(size=320).encode(
                 x=alt.X("Valor:Q", title="Valor de entrada"),
                 y=alt.Y("Ponto:N", sort=ordem, title=None),
                 color=alt.Color("Classe:N", scale=alt.Scale(
                     domain=[c for c in ["Válida", "Ramo F", "Inválida", "Ramo V"] if c in set(pts["Classe"])],
-                    range=[("#1FAE8E" if c in ("Válida", "Ramo F") else "#E5566A")
+                    range=[("#2FBF71" if c in ("Válida", "Ramo F") else "#FF5A7A")
                            for c in ["Válida", "Ramo F", "Inválida", "Ramo V"] if c in set(pts["Classe"])])),
                 tooltip=["Ponto", "Valor", "Classe", "Esperado"])
-            textos = base.mark_text(dy=-20, fontSize=12, color="#8795AE").encode(
+            textos = base.mark_text(dy=-20, fontSize=12, color="#8D8DA3").encode(
                 x="Valor:Q", y=alt.Y("Ponto:N", sort=ordem), text="Rótulo:N")
             st.altair_chart((linha + bolas + textos).properties(height=260, width="container")
                             .configure_view(stroke=None)
@@ -1067,37 +1102,21 @@ with tabs[5]:
             st.markdown("#### Validação do código sob teste (o código está bem testado e correto?)")
             st.dataframe(pd.DataFrame(B, columns=df_cols), hide_index=True)
 
-            # ---- resumo para a apresentação -------------------------------------------
-            st.markdown("#### Resumo para a apresentação")
-            resumo_m1 = (f"Unidade `{calc.name}({', '.join(calc.params)})`; ε = {eps_txt(ei['epsilon'])} ({ei['label']}); "
-                         f"{len(pce_rows)} classes de equivalência; {len(rules)} fronteira(s) com {4 * len(rules)} pontos de AVL"
-                         + (f"; {len(suite)} casos de teste, {n_ok_v} passam e {n_bad_v} falham." if resultados and orc_fn
-                            else (f"; {len(suite)} casos de teste." if suite else ".")))
-            resumo_m2 = (f"V(G) = {mc_v['V_EN']} (N = {mc_v['N']}, E = {mc_v['E']}, P = {mc_v['P']}, R = {mc_v['R']}); "
-                         f"as três fórmulas de McCabe {'concordam' if mc_v['consistente'] else 'divergem'}."
-                         + (f" A suíte cobre {pct(*cob_arestas)} das arestas." if cob_arestas else ""))
-            resumo_m3 = (f"{len(pares_v)} pares definição-uso"
-                         + (f"; todos-usos cobertos {pct(*cob_du)}" if cob_du else "")
-                         + (f"; escore de mutação {ms_v['MS']:.1f}% ({ms_v['Md']} de {ms_v['Mt'] - ms_v['Me']} mutantes mortos)."
-                            if ms_v else "."))
-            st.markdown(f"- **Módulo 1 (caixa-preta):** {resumo_m1}\n- **Módulo 2 (caixa-branca):** {resumo_m2}\n"
-                        f"- **Módulo 3 (fluxo de dados e mutação):** {resumo_m3}")
-
             md = [f"# Relatório de validação: {origem}", "",
                   f"Unidade sob teste: `{calc.name}({', '.join(calc.params)})`", "",
                   "## Validação da análise", "", "| Módulo | Verificação | Status | Detalhe |", "|---|---|---|---|"]
             md += [f"| {m} | {v} | {s} | {d} |" for m, v, s, d in A]
             md += ["", "## Validação do código sob teste", "", "| Módulo | Verificação | Status | Detalhe |", "|---|---|---|---|"]
             md += [f"| {m} | {v} | {s} | {d} |" for m, v, s, d in B]
-            md += ["", "## Resumo", "", f"- Módulo 1: {resumo_m1}", f"- Módulo 2: {resumo_m2}", f"- Módulo 3: {resumo_m3}", ""]
+            md += [""]
             relatorio_md = "\n".join(md) + "\n" + eg.rtm_markdown(rtm)
             st.download_button("⬇️ Baixar relatório de validação (.md)", relatorio_md.encode("utf-8"),
                                "relatorio_validacao.md", "text/markdown")
 
             parecer_ia("m4", f"""Você é um especialista em teste de software. Com base no relatório de validação abaixo,
-    calculado por uma ferramenta determinística, escreva em português: (1) um roteiro de apresentação (pitch) de cerca
-    de 2 minutos, com um parágrafo por módulo; (2) as principais limitações e riscos da análise; (3) o que você
-    validaria a mais antes de confiar no resultado. Não invente números que não estejam no relatório.
+    calculado por uma ferramenta determinística, escreva em português: (1) as principais limitações e riscos da
+    análise; (2) lacunas na rastreabilidade entre requisitos e casos de teste; (3) o que você validaria a mais antes de
+    confiar no resultado. Não invente números que não estejam no relatório.
 
     {relatorio_md}""")
 

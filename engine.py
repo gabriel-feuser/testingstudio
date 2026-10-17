@@ -523,21 +523,21 @@ def node_label(node: Node, maxlen=34) -> str:
 def to_dot(cfg: CFG, covered_nodes=None, covered_edges=None) -> str:
     cn, ce = covered_nodes, covered_edges
     L = ['digraph G {', 'rankdir=TB;', 'bgcolor="transparent";',
-         'node [fontname="Helvetica", fontsize=11, penwidth=1.4, fontcolor="#14213D", color="#5B6B85"];',
+         'node [fontname="Helvetica", fontsize=11, penwidth=1.4, fontcolor="#14141B", color="#6B6B80"];',
          'edge [fontname="Helvetica", fontsize=10];']
     for nid, nd in cfg.nodes.items():
         txt = node_label(nd).replace('"', "'")
         covered = cn is None or nid in cn
         if nd.kind == "pred":
-            fill = "#F4CDD1" if covered else "#EEF2F8"
+            fill = "#FFD6BF" if covered else "#EFEFF5"
             L.append(f'N{nid} [shape=diamond, style=filled, fillcolor="{fill}", label="N{nid}\\n{txt}"];')
         elif nd.kind == "exit":
-            L.append(f'N{nid} [shape=doublecircle, style=filled, fillcolor="#BFE5DA", label="Fim"];')
+            L.append(f'N{nid} [shape=doublecircle, style=filled, fillcolor="#CDEFD9", label="Fim"];')
         else:
-            fill = "#C9D8F0" if covered else "#EEF2F8"
+            fill = "#DCD8F5" if covered else "#EFEFF5"
             L.append(f'N{nid} [shape=box, style="rounded,filled", fillcolor="{fill}", label="N{nid}\\n{txt}"];')
     for i, (s, d, l) in enumerate(cfg.edges):
-        col = {"V": "#1FAE8E", "F": "#E5566A"}.get(l, "#8795AE")
+        col = {"V": "#2FBF71", "F": "#FF5A7A"}.get(l, "#8D8DA3")
         pen = 2.4 if (ce is not None and i in ce) else 1.2
         lab = f', label="{l}"' if l else ""
         L.append(f'N{s} -> N{d} [color="{col}", fontcolor="{col}", penwidth={pen}{lab}];')
