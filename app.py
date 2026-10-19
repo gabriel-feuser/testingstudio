@@ -369,8 +369,7 @@ tabs = st.tabs([
     "Fonte",
     "Módulo 1: Caixa-preta",
     "Módulo 2: Caixa-branca",
-    "Módulo 3: Fluxo de dados",
-    "Módulo 3: Mutação",
+    "Módulo 3: Fluxo de dados e mutação",
     "Módulo 4: Validação",
 ])
 
@@ -685,9 +684,12 @@ Código:
 {source}""")
 
 # ===========================================================================
-# ABA 3 — Módulo 3: Fluxo de dados
+# ABA 3 — Módulo 3: Fluxo de dados e mutação (duas sub-abas)
 # ===========================================================================
 with tabs[3]:
+    sub3 = st.tabs(["Fluxo de dados (pares DU)", "Teste de mutação"])
+
+with sub3[0]:
     st.subheader("Módulo 3: Teste de fluxo de dados: pares Definição-Uso")
     st.caption("d (definição), c-uso (uso computacional, associado a nó) e p-uso (uso predicativo, associado a aresta).")
     fn_du = st.selectbox("Função", nomes_f, index=idx_def, key="du_fn")
@@ -762,7 +764,7 @@ Código:
 {source}""")
 
 # ===========================================================================
-# ABA 4 — Módulo 3: Mutação
+# Módulo 3 (continuação): Teste de mutação
 # ===========================================================================
 @st.cache_data(show_spinner="Gerando e executando mutantes...")
 def mutacao_cached(fonte: str, fname: str, ids: tuple):
@@ -774,7 +776,7 @@ def mutacao_cached(fonte: str, fname: str, ids: tuple):
     return eg.run_mutation(f, su, sc)
 
 
-with tabs[4]:
+with sub3[1]:
     st.subheader("Módulo 3: Teste de mutação: quão boa é a sua suíte de testes?")
     st.caption("Injetamos defeitos propositais (mutantes) e verificamos se os testes “matam” cada um.")
     if not (calc and suite):
@@ -850,11 +852,11 @@ Código:
 {source}""")
 
 # ===========================================================================
-# ABA 5 — Módulo 4: Validação
+# ABA 4 — Módulo 4: Validação
 # ===========================================================================
 OK_, WARN_, BAD_, NA_ = "✅ Ok", "⚠️ Atenção", "❌ Falha", "➖ Não avaliado"
 
-with tabs[5]:
+with tabs[4]:
     st.subheader("Módulo 4: Validação dos resultados")
     st.caption("Prova de que o que foi pedido foi testado (e o que foi testado foi pedido), mais um painel técnico "
                "com as verificações dos módulos 1 a 3.")
