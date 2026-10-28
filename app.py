@@ -30,12 +30,19 @@ st.markdown(
 /* Cores que acompanham o tema ativo do Streamlit (claro ou escuro): o Streamlit
    define color-scheme em .stApp e light-dark() escolhe o valor certo. */
 :root {
-  --bg: light-dark(#F2F2F7, #0C0C11);
+  --bg: light-dark(#F4F2FA, #0C0C11);
   --surface: light-dark(#FFFFFF, #15151C);
-  --side: light-dark(#E6E6EF, #101016);
+  --side: light-dark(#E9E5F4, #101016);
   --ink: light-dark(#14141B, #EDEDF4);
+  --brand: light-dark(#FFE3D1, #EDEDF4);
+  --brand-line: light-dark(#D9480F, #EDEDF4);
+  --on-brand: light-dark(#7A2A05, #0C0C11);
+  --hero-bg: light-dark(#FFFFFF, #14141B);
+  --h-fg: light-dark(#1B1B26, #F2F2F7); --h-sub: light-dark(#5C5C70, #B7B7CA);
+  --h-cap: light-dark(#6E6E84, #9A9AB0); --h-ok: light-dark(#18A867, #3DDC97);
+  --h-bad: light-dark(#E0426A, #FF6B8B); --h-mark: light-dark(#D9480F, #F2F2F7);
   --line: light-dark(rgba(20,20,27,.24), rgba(237,237,244,.20));
-  --line-strong: light-dark(#14141B, #4A4A5C);
+  --line-strong: light-dark(#B9B6CC, #4A4A5C);
   --accent: light-dark(#D9480F, #FF8A4C);
   --on-accent: light-dark(#FFFFFF, #1A0E06);
   --ok: light-dark(#0B7A4F, #3DDC97); --bad: light-dark(#C0183F, #FF6B8B);
@@ -47,8 +54,10 @@ st.markdown(
 }
 @supports not (color: light-dark(#000, #fff)) {
   :root {
-    --bg: #F2F2F7; --surface: #FFFFFF; --side: #E6E6EF; --ink: #14141B; --line: rgba(20,20,27,.24);
-    --line-strong: #14141B; --accent: #D9480F; --on-accent: #FFFFFF;
+    --bg: #F4F2FA; --surface: #FFFFFF; --side: #E9E5F4; --ink: #14141B; --line: rgba(20,20,27,.24);
+    --brand: #FFE3D1; --brand-line: #D9480F; --on-brand: #7A2A05; --hero-bg: #FFFFFF;
+    --h-fg: #1B1B26; --h-sub: #5C5C70; --h-cap: #6E6E84; --h-ok: #18A867; --h-bad: #E0426A; --h-mark: #D9480F;
+    --line-strong: #B9B6CC; --accent: #D9480F; --on-accent: #FFFFFF;
     --ok: #0B7A4F; --bad: #C0183F; --warn: #8F5600; --info: #2253B8;
     --ok-bg: #E3F4EC; --bad-bg: #FBE7EC; --warn-bg: #FBF0DB; --info-bg: #E6EEFB;
   }
@@ -70,27 +79,26 @@ textarea {font-size: .84rem !important; line-height: 1.5 !important;}
 .block-container {padding-top: 5rem !important; max-width: 1240px;}
 footer {visibility: hidden;}
 
-/* Cabeçalho: bloco escuro com o degrau da fronteira */
-.ts-head {--h-ok: #3DDC97; --h-bad: #FF6B8B; --h-fg: #F2F2F7;
-          display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
-          gap: 24px 48px; background: #14141B; color: var(--h-fg);
+/* Cabeçalho com o degrau da fronteira */
+.ts-head {display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+          gap: 24px 48px; background: var(--hero-bg); color: var(--h-fg);
           border: 1.5px solid var(--line-strong); border-left: 8px solid var(--accent); border-radius: 2px;
           padding: 26px 30px 30px; margin-bottom: 24px; box-shadow: 5px 5px 0 var(--accent);}
 div.ts-head h1 {margin: 0 0 8px 0; padding: 0; font-size: 2.5rem; line-height: 1.05; font-weight: 800; color: var(--h-fg);}
-div.ts-head p {margin: 0; color: #B7B7CA; font-size: .98rem; max-width: 44ch;}
+div.ts-head p {margin: 0; color: var(--h-sub); font-size: .98rem; max-width: 44ch;}
 .ts-step {position: relative; width: min(400px, 100%); flex: 0 1 400px; padding-bottom: 34px;}
 .ts-bars {display: flex; align-items: flex-end; gap: 5px; height: 58px;}
 .ts-bars .b {display: block; flex: 1; position: relative; border-radius: 1px; font-style: normal;}
 .ts-bars .b.inv {height: 30%; background: var(--h-bad); opacity: .55;}
 .ts-bars .b.val {height: 86%; background: var(--h-ok); opacity: .85;}
 .ts-bars .b.mk {opacity: 1;}
-.ts-bars .b.mk.on {height: 100%; background: var(--h-fg);}
+.ts-bars .b.mk.on {height: 100%; background: var(--h-mark);}
 .ts-bars .b.mk em {position: absolute; top: calc(100% + 9px); left: 50%; transform: translateX(-50%);
                    font: 500 .78rem 'JetBrains Mono', ui-monospace, monospace; font-style: normal;
                    white-space: nowrap; color: var(--h-fg);}
 .ts-bars .b.mk.off em {color: var(--h-bad);}
 .ts-bars .b.mk.in em {color: var(--h-ok);}
-.ts-cap {position: absolute; bottom: 0; font-size: .72rem; color: #9A9AB0;}
+.ts-cap {position: absolute; bottom: 0; font-size: .72rem; color: var(--h-cap);}
 .ts-cap.l {left: 0;} .ts-cap.r {right: 0;}
 
 /* Avisos */
@@ -105,6 +113,8 @@ div.ts-head p {margin: 0; color: #B7B7CA; font-size: .98rem; max-width: 44ch;}
                           border-radius: 2px; padding: 12px 16px; box-shadow: none;}
 [data-testid="stMetricLabel"] {opacity: .75;}
 [data-testid="stMetricLabel"] p {text-transform: uppercase; letter-spacing: .05em; font-size: .72rem;}
+[data-testid="stMetricLabel"], [data-testid="stMetricLabel"] > div, [data-testid="stMetricLabel"] p {white-space: normal !important;
+    overflow: visible !important; text-overflow: clip !important;}
 [data-testid="stMetricValue"] {font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 500; color: inherit;
                                font-size: clamp(.9rem, 1.15vw, 1.3rem);}
 [data-testid="stMetricValue"], [data-testid="stMetricValue"] > div {white-space: normal !important;
@@ -120,8 +130,8 @@ div.ts-head p {margin: 0; color: #B7B7CA; font-size: .98rem; max-width: 44ch;}
 .stTabs [role="tab"]::before, .stTabs [role="tab"]::after {display: none !important; background: transparent !important;
     border-color: transparent !important; height: 0 !important;}
 .stTabs [role="tab"] p {color: inherit !important; font-weight: 600 !important; font-size: .86rem !important;}
-.stTabs [role="tab"][aria-selected="true"] {background: var(--ink) !important; border-color: var(--ink) !important;}
-.stTabs [role="tab"][aria-selected="true"] p {color: var(--bg) !important;}
+.stTabs [role="tab"][aria-selected="true"] {background: var(--brand) !important; border-color: var(--brand-line) !important;}
+.stTabs [role="tab"][aria-selected="true"] p {color: var(--on-brand) !important;}
 .stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {display: none !important;}
 .stButton > button, .stDownloadButton > button {border-radius: 2px; font-weight: 600; border: 1.5px solid var(--line-strong);}
 [data-testid="stBaseButton-primary"], button[kind="primary"] {background: var(--accent) !important;
@@ -778,11 +788,22 @@ def mutacao_cached(fonte: str, fname: str, ids: tuple):
 
 with sub3[1]:
     st.subheader("Módulo 3: Teste de mutação: quão boa é a sua suíte de testes?")
-    st.caption("Injetamos defeitos propositais (mutantes) e verificamos se os testes “matam” cada um.")
+    st.markdown("**Pergunta que esta tela responde:** se alguém estragasse o código sem querer, os seus testes perceberiam? "
+                "Para descobrir, o app injeta defeitos propositais (**mutantes**) e verifica se os testes “matam” cada um.")
+    with st.expander("Como ler esta tela (glossário)"):
+        st.markdown(
+            "- **Mutante:** uma cópia do código com **um** defeito inserido de propósito (por exemplo, trocar `+` por `−` ou `>` por `>=`).\n"
+            "- **Morto (detectado):** algum teste falhou ao rodar contra o mutante, ou seja, a suíte percebeu o defeito. É o resultado desejado.\n"
+            "- **Vivo (passou despercebido):** todos os testes passaram mesmo com o defeito. Indica uma lacuna na suíte.\n"
+            "- **Equivalente:** a alteração não muda o resultado do programa; nenhum teste consegue detectá-la, então ela fica fora do cálculo.\n"
+            "- **Escore de mutação (MS):** a porcentagem de defeitos detectados, `MS = Md ÷ (Mt − Me) × 100`. "
+            "Mt = mutantes gerados, Md = mortos, Me = equivalentes. Quanto mais perto de 100%, melhor. "
+            "O app usa como referência: 90% ou mais = suíte forte; de 70% a 89% = intermediária; abaixo de 70% = fraca.\n"
+            "- **Operadores:** os tipos de defeito simulados: " + "; ".join(f"**{k}** ({v})" for k, v in eg.OPERATORS.items()) + ".")
     if not (calc and suite):
         note("A mutação requer uma unidade executável pelo interpretador interno: parâmetros numéricos e comandos LET/RETURN/IF/laços (sem SQL, CALL ou texto).", "warn")
     else:
-        modo = st.radio("Suíte de testes usada contra os mutantes",
+        modo = st.radio("Quais testes usar contra os mutantes?",
                         ["Completa (PCE + AVL)", "Somente PCE", "Somente AVL", "Somente o caminho feliz", "Personalizada"],
                         horizontal=True)
         todos = [c["id"] for c in suite]
@@ -796,53 +817,87 @@ with sub3[1]:
             ids = [todos[0]]
         else:
             ids = st.multiselect("Casos de teste", todos, default=todos)
+        explica_modo = {
+            "Completa (PCE + AVL)": "Todos os casos gerados pela partição em classes (PCE) e pela análise de valor limite (AVL).",
+            "Somente PCE": "Apenas os casos da partição em classes de equivalência.",
+            "Somente AVL": "Apenas os casos de valor limite (On, Off, Interior, Exterior).",
+            "Somente o caminho feliz": "Só o primeiro caso, com todos os valores válidos. Serve de comparação: mostra o quanto os demais testes ajudam.",
+            "Personalizada": "Escolha, na lista acima, exatamente quais casos usar.",
+        }[modo]
+        st.caption(f"{explica_modo} Usando **{len(ids)}** de {len(todos)} casos. Dica: troque a opção para ver como o resultado muda.")
         if not ids:
             note("Selecione ao menos um caso de teste.", "warn")
         else:
             rows = mutacao_cached(source, calc.name, tuple(ids))
-            man = st.checkbox("Informar Me (mutantes equivalentes) manualmente", value=False)
+            man = st.checkbox("Já sei quais mutantes são equivalentes (informar a quantidade)", value=False,
+                              help="Equivalente é o mutante cuja alteração não muda o resultado do programa. O app estima isso sozinho; "
+                                   "marque aqui se você já conferiu manualmente e quer informar o número exato.")
             me_val = None
             if man:
-                me_val = st.number_input("Me", min_value=0, max_value=len(rows), value=0, step=1)
+                me_val = st.number_input("Quantidade de mutantes equivalentes (Me)", min_value=0, max_value=len(rows), value=0, step=1)
             sc = eg.mutation_score(rows, me_val)
+            df_m = pd.DataFrame(rows)
+            n_vivos = int((df_m["status"] == "Vivo").sum())
+            base = sc["Mt"] - sc["Me"]
+            def _pl(n, um, varios):
+                return um if n == 1 else varios
+
+            sujeito = f"Seus {len(ids)} casos de teste detectaram" if len(ids) > 1 else "Seu caso de teste detectou"
+            frase = (f"{sujeito} <b>{sc['Md']} de {base}</b> {_pl(base, 'defeito simulado', 'defeitos simulados')} "
+                     f"(<b>{sc['MS']:.1f}%</b>).")
+            nao_notados = (f"{n_vivos} {_pl(n_vivos, 'defeito simulado passou despercebido', 'defeitos simulados passaram despercebidos')}")
+            if sc["MS"] >= 90:
+                extra = ("Nenhum defeito simulado passou despercebido: não há o que acrescentar à suíte por enquanto." if n_vivos == 0
+                         else f"Ainda assim, {nao_notados}: veja a seção abaixo.")
+                note(f"{frase} <b>A suíte é forte:</b> se alguém quebrasse o código desse jeito, os testes perceberiam. {extra}")
+            elif sc["MS"] >= 70:
+                note(f"{frase} <b>A suíte é intermediária:</b> pega a maior parte, mas {nao_notados}. "
+                     "<b>Próximo passo:</b> veja “Defeitos que passaram despercebidos” abaixo e acrescente os casos indicados.", "warn")
+            else:
+                note(f"{frase} <b>A suíte é fraca:</b> muitos defeitos passariam sem ser notados. <b>Próximo passo:</b> use a suíte Completa "
+                     "e acrescente os casos indicados em “Defeitos que passaram despercebidos”.", "bad")
 
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Mutantes gerados (Mt)", sc["Mt"])
-            c2.metric("Mortos (Md)", sc["Md"])
-            c3.metric("Equivalentes (Me)", sc["Me"])
-            c4.metric("Escore de Mutação (MS)", f"{sc['MS']:.1f}%")
-            st.markdown(f"`MS = Md / (Mt − Me) × 100 = {sc['Md']} / ({sc['Mt']} − {sc['Me']}) × 100 = {sc['MS']:.1f}%`")
-            if sc["MS"] >= 90:
-                note("MS alto: a suíte detecta a maioria dos defeitos simulados.")
-            elif sc["MS"] >= 70:
-                note("MS intermediário: há mutantes sobrevivendo — veja os testes sugeridos abaixo.", "warn")
-            else:
-                note("MS baixo: muitos mutantes sobreviveram. A suíte não é capaz de detectar falhas reais.", "bad")
+            c1.metric("Defeitos simulados (Mt)", sc["Mt"], help="Mutantes gerados: quantas cópias do código, cada uma com um defeito, foram criadas.")
+            c2.metric("Detectados (Md)", sc["Md"], help="Mutantes mortos: algum teste falhou, ou seja, a suíte percebeu o defeito.")
+            c3.metric("Equivalentes (Me)", sc["Me"], help="Mutantes cuja alteração não muda o resultado do programa. Nenhum teste os detecta, por isso ficam fora do cálculo.")
+            c4.metric("Escore de mutação (MS)", f"{sc['MS']:.1f}%", help="Porcentagem de defeitos detectados. Quanto mais perto de 100%, melhor.")
+            st.markdown("Como o escore é calculado: "
+                        f"`MS = Md ÷ (Mt − Me) × 100 = {sc['Md']} ÷ ({sc['Mt']} − {sc['Me']}) × 100 = {sc['MS']:.1f}%`")
 
-            df_m = pd.DataFrame(rows)
             resumo = df_m.groupby("operador")["status"].value_counts().unstack(fill_value=0)
             resumo = resumo.reindex(columns=["Morto", "Vivo", "Equivalente (provável)"], fill_value=0)
             resumo.insert(0, "Descrição", [eg.OPERATORS[o] for o in resumo.index])
             resumo.insert(1, "Total", resumo[["Morto", "Vivo", "Equivalente (provável)"]].sum(axis=1))
             st.markdown("**Por operador de mutação**")
+            st.caption("Cada operador é um tipo de defeito simulado. A tabela mostra, de cada tipo, quantos foram detectados (Morto), "
+                       "passaram despercebidos (Vivo) ou parecem equivalentes.")
             st.dataframe(resumo.reset_index().rename(columns={"operador": "Operador"}), hide_index=True)
 
-            filtro = st.selectbox("Mostrar mutantes", ["Todos", "Vivo", "Morto", "Equivalente (provável)"])
-            ic = {"Morto": "💀 Morto", "Vivo": "🧟 Vivo", "Equivalente (provável)": "🟰 Equivalente (provável)"}
-            vis = df_m if filtro == "Todos" else df_m[df_m["status"] == filtro]
-            st.dataframe(pd.DataFrame({
-                "ID": vis["id"], "Operador": vis["operador"], "Mutação": vis["mutacao"],
-                "Código mutante": vis["trecho"], "Status": vis["status"].map(ic),
-                "Morto por": vis["morto_por"], "Entrada que mataria": vis["teste_sugerido"]}), hide_index=True)
-            st.download_button("⬇️ Baixar mutantes (CSV)", df_csv(df_m), "mutantes.csv", "text/csv")
-
+            ic = {"Morto": "✅ Detectado (morto)", "Vivo": "⚠️ Passou despercebido (vivo)", "Equivalente (provável)": "🟰 Equivalente (provável)"}
             vivos = df_m[df_m["status"] == "Vivo"]
             if len(vivos):
-                note(f"<b>{len(vivos)} mutantes vivos.</b> Cada um tem uma entrada que o mataria (coluna "
-                     "“Entrada que mataria”). Adicione essas entradas à suíte para elevar o MS.", "warn")
-            st.caption("“Equivalente (provável)” = nenhuma entrada de uma grade de sondagem (NULL, negativos, 0, ±ε, 1, 100) "
-                       "distingue o mutante do original — é uma heurística; confirme manualmente. "
-                       "Mutantes que lançam erro de execução contam como mortos.")
+                st.markdown("**Defeitos que passaram despercebidos**")
+                note(f"<b>{len(vivos)} {_pl(len(vivos), 'defeito simulado sobreviveu', 'defeitos simulados sobreviveram')}.</b> "
+                     f"Para {_pl(len(vivos), 'ele há', 'cada um há')} uma entrada que {_pl(len(vivos), 'o detectaria', 'o detectaria')} "
+                     "(coluna “Entrada que detectaria”). Inclua essas entradas na sua lista de casos de teste (por exemplo, na tabela de "
+                     "casos manuais do Módulo 4) e defina o resultado esperado pela <b>regra de negócio</b>, não pelo que o código devolve.", "warn")
+                st.dataframe(pd.DataFrame({"ID": vivos["id"], "O que foi alterado": vivos["mutacao"],
+                                           "Código com o defeito": vivos["trecho"],
+                                           "Entrada que detectaria": vivos["teste_sugerido"]}), hide_index=True)
+
+            st.markdown("**Todos os mutantes**")
+            filtro = st.selectbox("Mostrar mutantes", ["Todos", "Vivo", "Morto", "Equivalente (provável)"],
+                                  format_func=lambda x: "Todos" if x == "Todos" else ic[x])
+            vis = df_m if filtro == "Todos" else df_m[df_m["status"] == filtro]
+            st.dataframe(pd.DataFrame({
+                "ID": vis["id"], "Operador": vis["operador"], "O que foi alterado": vis["mutacao"],
+                "Código com o defeito": vis["trecho"], "Resultado": vis["status"].map(ic),
+                "Detectado por (caso de teste)": vis["morto_por"], "Entrada que detectaria": vis["teste_sugerido"]}), hide_index=True)
+            st.download_button("⬇️ Baixar mutantes (CSV)", df_csv(df_m), "mutantes.csv", "text/csv")
+            st.caption("“Equivalente (provável)”: nenhuma das entradas que o app tenta (NULL, negativos, 0, ±ε, 1 e 100) consegue "
+                       "diferenciar o mutante do original. É uma estimativa: confirme analisando o código. "
+                       "Mutantes que causam erro de execução contam como detectados (mortos).")
 
     parecer_ia("m3b", f"""Você é um especialista em teste de software. Avalie o resultado do teste de mutação da função
 `{calc.name if calc else '-'}`. Explique quais mutantes sobreviveram, se algum parece equivalente e que casos de
