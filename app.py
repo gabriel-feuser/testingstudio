@@ -6,6 +6,7 @@ Módulo 2  Caixa-branca : GFC + Complexidade Ciclomática de McCabe
 Módulo 3  Fluxo de dados (pares Def-Uso) + Teste de Mutação (MS)
 Módulo 4  Validação dos resultados
 """
+import datetime
 import hashlib
 import os
 from decimal import Decimal as D
@@ -922,7 +923,27 @@ with tabs[4]:
         ver_k, sug_k = f"rtm_ver_{base_k}", f"rtm_sug_{base_k}"
         ver = st.session_state.get(ver_k, 0)
         rtm = None
-        sub_v = st.tabs(["Matriz de rastreabilidade (RTM)", "Painel de validação técnica"])
+        sub_v = st.tabs(["Matriz de rastreabilidade (RTM)", "Painel de validação técnica", "Parecer do profissional"])
+        pk = {k: f"par_{k}_{base_k}" for k in ("nome", "funcao", "data", "concl", "texto", "recs")}
+
+        def _contexto_parecer():
+            linhas = [f"Verificações automáticas do app: {cont[OK_]} ok, {cont[WARN_]} atenção, {cont[BAD_]} falha(s)."]
+            if rtm and rtm["req_ids"]:
+                linhas.append(f"Rastreabilidade: {rtm['fwd'][0]}/{rtm['fwd'][1]} requisitos cobertos e "
+                              f"{rtm['bwd'][0]}/{rtm['bwd'][1]} casos de teste rastreados.")
+            return linhas
+
+        def _parecer_md():
+            nome = (st.session_state.get(pk["nome"]) or "").strip()
+            texto = (st.session_state.get(pk["texto"]) or "").strip()
+            concl = st.session_state.get(pk["concl"])
+            if not (nome and texto and concl):
+                return ""
+            d = st.session_state.get(pk["data"])
+            return eg.parecer_markdown(nome, (st.session_state.get(pk["funcao"]) or "").strip(),
+                                       d.strftime("%d/%m/%Y") if hasattr(d, "strftime") else "", concl, texto,
+                                       (st.session_state.get(pk["recs"]) or "").strip(),
+                                       f"{calc.name}({', '.join(calc.params)})", _contexto_parecer())
         with sub_v[0]:
             FLUXOS_COL = ("Caminho feliz", "Fluxo alternativo", "Fluxo de exceção")
 
@@ -1167,7 +1188,7 @@ with tabs[4]:
             md += [f"| {m} | {v} | {s} | {d} |" for m, v, s, d in B]
             md += [""]
             relatorio_md = "\n".join(md) + "\n" + eg.rtm_markdown(rtm)
-            st.download_button("⬇️ Baixar relatório de validação (.md)", relatorio_md.encode("utf-8"),
+            st.download_button("⬇️ Baixar relatório de validação (.md)", (relatorio_md + "\n" + _parecer_md()).encode("utf-8"),
                                "relatorio_validacao.md", "text/markdown")
 
             parecer_ia("m4", f"""Você é um especialista em teste de software. Com base no relatório de validação abaixo,
@@ -1176,6 +1197,38 @@ with tabs[4]:
     confiar no resultado. Não invente números que não estejam no relatório.
 
     {relatorio_md}""")
+
+        with sub_v[2]:
+            st.markdown("#### Parecer do profissional")
+            st.caption("Espaço para um profissional da área registrar a sua avaliação sobre esta análise. Diferente do "
+                       "“Parecer do Gemini”, este campo é para a opinião de uma pessoa: o app não a avalia nem a altera. "
+                       "Consulte as outras sub-abas antes de concluir.")
+            st.caption(" ".join(_contexto_parecer()))
+            c1, c2 = st.columns(2)
+            c1.text_input("Nome do profissional", key=pk["nome"])
+            c2.text_input("Função ou área de atuação", key=pk["funcao"], placeholder="Ex.: Analista de testes sênior")
+            st.date_input("Data do parecer", value=datetime.date.today(), format="DD/MM/YYYY", key=pk["data"])
+            st.radio("Conclusão", ["Aprovado", "Aprovado com ressalvas", "Não aprovado"], index=None, horizontal=True,
+                     key=pk["concl"])
+            st.text_area("Parecer", key=pk["texto"], height=220,
+                         placeholder="Escreva a sua avaliação: o que está adequado, o que preocupa e por quê.")
+            st.text_area("Recomendações (opcional)", key=pk["recs"], height=110,
+                         placeholder="Ações sugeridas, por exemplo: acrescentar casos de teste, corrigir uma validação.")
+            doc_parecer = _parecer_md()
+            if doc_parecer:
+                nivel = {"Aprovado": ("Conclusão do profissional: aprovado.", ""),
+                         "Aprovado com ressalvas": ("Conclusão do profissional: aprovado com ressalvas.", "warn"),
+                         "Não aprovado": ("Conclusão do profissional: não aprovado.", "bad")}[st.session_state[pk["concl"]]]
+                note(nivel[0], nivel[1])
+                with st.expander("Visualizar o documento do parecer"):
+                    st.markdown(doc_parecer)
+                st.download_button("⬇️ Baixar parecer (.md)", doc_parecer.encode("utf-8"), "parecer_profissional.md", "text/markdown")
+            else:
+                falta = [n for n, k in (("o nome", "nome"), ("a conclusão", "concl"), ("o parecer", "texto"))
+                         if not (st.session_state.get(pk[k]) or "").strip()]
+                note("Para gerar o documento do parecer, preencha " + ", ".join(falta[:-1]) + (" e " if len(falta) > 1 else "")
+                     + falta[-1] + ".", "info")
+                st.caption("O que você escreve aqui fica apenas nesta sessão do navegador. Baixe o documento para guardá-lo.")
 
 st.divider()
 st.caption("TestingStudio Web")

@@ -1437,3 +1437,21 @@ def default_trace(func: Func, case, flow: str) -> str:
     if "nulo" in case["descricao"]:
         return "REQ03"
     return "REQ01" if flow == FLUXO_FELIZ else "REQ02"
+
+
+def parecer_markdown(nome, funcao, data, conclusao, parecer, recomendacoes="", unidade="", contexto=None) -> str:
+    """Documento do parecer de um profissional (texto escrito por uma pessoa; o app não o avalia)."""
+    L = ["## Parecer do profissional", "",
+         f"- **Profissional:** {str(nome).strip()}",
+         f"- **Função / área de atuação:** {str(funcao).strip() or '—'}",
+         f"- **Data:** {data or '—'}"]
+    if unidade:
+        L.append(f"- **Unidade analisada:** `{unidade}`")
+    L.append(f"- **Conclusão:** {conclusao}")
+    for c in (contexto or []):
+        L.append(f"- {c}")
+    L += ["", "### Parecer", "", str(parecer).strip()]
+    if str(recomendacoes).strip():
+        L += ["", "### Recomendações", "", str(recomendacoes).strip()]
+    L += ["", "_Este parecer é a opinião do profissional identificado acima; o TestingStudio Web não o avalia nem o altera._", ""]
+    return "\n".join(L)
