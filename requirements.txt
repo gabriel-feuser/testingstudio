@@ -3,3 +3,5 @@ pandas
 numpy
 networkx
 google-genai
+reportlab
+matplotlib

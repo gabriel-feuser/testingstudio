@@ -14,10 +14,32 @@ from pathlib import Path
 
 import altair as alt
 import pandas as pd
-import streamlit as st
+import streamlit as _streamlit
 from google import genai
 
 import engine as eg
+
+
+class _SemPDF:
+    """Se a biblioteca de PDF não estiver instalada, o app funciona igual, só sem o botão de PDF."""
+    blocos = []
+
+    def __init__(self, real):
+        self._real = real
+
+    def registrar(self, *a, **k):
+        pass
+
+    def __getattr__(self, nome):
+        return getattr(self._real, nome)
+
+
+try:
+    import pdf_report as relpdf
+    st = relpdf.Registrador(_streamlit)
+except Exception:                                                          # noqa: BLE001
+    relpdf = None
+    st = _SemPDF(_streamlit)
 
 st.set_page_config(page_title="TestingStudio Web", page_icon="🧪", layout="wide")
 
@@ -256,6 +278,7 @@ modelo = st.sidebar.selectbox("Modelo Gemini:", modelos, index=modelos.index(pad
 arquivo_up = st.sidebar.file_uploader("Analisar outro fonte (.txt, .4gl)", type=["txt", "4gl", "src", "prg"],
                                       help="Envie o fonte que deseja testar. Sem envio, o app lê cad0001_item_calculo.txt.")
 slot_unit = st.sidebar.container()
+slot_pdf = st.sidebar.container()
 
 st.sidebar.markdown("---")
 st.sidebar.caption("Os cálculos desta ferramenta são determinísticos; o Gemini só gera pareceres opcionais.")
@@ -392,6 +415,7 @@ with tabs[0]:
     st.caption(f"Arquivo: **{origem}** · o texto abaixo é editável — todas as abas analisam o que está na caixa. "
                "Experimente alterar o código (por exemplo, remover uma validação) e veja a análise reagir.")
     st.text_area("Fonte (Informix-4GL)", key="src", height=380, label_visibility="collapsed")
+    st.registrar("src", source)
     st.button("↺ Restaurar arquivo original", on_click=lambda: st.session_state.update(src=original))
 
     if not funcs:
@@ -514,6 +538,9 @@ with tabs[1]:
                             .configure_view(stroke=None)
                             .configure_axis(gridColor="rgba(127,127,127,0.22)", domainColor="rgba(127,127,127,0.5)",
                                             tickColor="rgba(127,127,127,0.5)", labelFontSize=12))
+            st.registrar("avl", {"fronteira": float(rsel["c"]),
+                                 "pontos": [{"ponto": r_["Ponto"], "valor": r_["Valor"], "classe": r_["Classe"], "rotulo": r_["Rótulo"]}
+                                            for r_ in pts.to_dict("records")]})
             st.caption("Linha tracejada = fronteira. Verde = região válida (ou ramo F) · vermelho = região inválida (ou ramo V).")
             tab = pts[["Ponto", "Valor", "Classe", "Esperado"]].copy()
             if testavel and suite:
@@ -541,6 +568,7 @@ with tabs[1]:
                        "Operadores: `+ - * / %`, comparações, `and/or/not`, `A if condição else B`, `abs/min/max`.")
             st.text_area("Expressão do oráculo", value=default_expr, key=orc_key, height=90,
                          placeholder=f"Exemplo: {exemplo}", label_visibility="collapsed")
+            st.registrar("par", "Oráculo (expressão)", orc_expr.strip() or "(não definido)")
             st.checkbox("Tratar NULL como 0 no oráculo (como o código faz)", value=True, key=nz_key)
             if orc_err:
                 note(f"Oráculo inválido: {orc_err}", "bad")
@@ -959,6 +987,8 @@ with tabs[4]:
                                     column_config={"ID": st.column_config.TextColumn("ID", width="small"),
                                                    "Requisito": st.column_config.TextColumn("Requisito", width="large")})
             reqs_in = [{"id": _s(r.get("ID")), "texto": _s(r.get("Requisito"))} for r in req_ed.to_dict("records") if _s(r.get("ID"))]
+            if reqs_in:
+                st.registrar("df", pd.DataFrame([{"ID": r["id"], "Requisito": r["texto"]} for r in reqs_in]), True)
 
             st.markdown("#### 2. Casos de teste e rastreio: o que foi testado")
             sug = st.session_state.get(sug_k)
@@ -1005,6 +1035,8 @@ with tabs[4]:
                 for r in tr_ed.to_dict("records"):
                     cts_in.append({"id": r["ID"], "tipo": r["Fluxo"], "descricao": r["Descrição"], "reqs": _s(r.get("Requisitos")),
                                    "resultado": res_map.get(r["ID"], "Não executado")})
+                st.registrar("df", pd.DataFrame([{"ID": c_["id"], "Fluxo": c_["tipo"], "Descrição": c_["descricao"],
+                                                  "Requisitos": c_["reqs"], "Resultado": c_["resultado"]} for c_ in cts_in]), True)
             else:
                 note("A unidade não gera casos executáveis (usa SQL, CALL, texto...). Cadastre os casos de teste manualmente abaixo.", "info")
 
@@ -1020,6 +1052,10 @@ with tabs[4]:
                 if _s(r.get("ID")):
                     cts_in.append({"id": _s(r.get("ID")), "tipo": _s(r.get("Fluxo")), "descricao": _s(r.get("Descrição")),
                                    "reqs": _s(r.get("Requisitos")), "resultado": _s(r.get("Resultado")) or "Não executado"})
+            manuais_ = [c_ for c_ in cts_in if c_["id"] not in {x["ID"] for x in (tr_ed.to_dict("records") if suite else [])}]
+            if manuais_:
+                st.registrar("df", pd.DataFrame([{"ID": c_["id"], "Fluxo": c_["tipo"], "Descrição": c_["descricao"],
+                                                  "Requisitos": c_["reqs"], "Resultado": c_["resultado"]} for c_ in manuais_]), True)
 
             rtm = eg.build_rtm(reqs_in, cts_in)
             st.markdown("#### 4. Matriz de Rastreabilidade de Requisitos (RTM)")
@@ -1232,3 +1268,30 @@ with tabs[4]:
 
 st.divider()
 st.caption("TestingStudio Web")
+
+# ---------------------------------------------------------------------------
+# PDF de todas as abas (gerado sob demanda, a partir do que foi exibido nesta execução)
+# ---------------------------------------------------------------------------
+_blocos_pdf = list(st.blocos)
+_meta_pdf = {"unidade": (f"{calc.name}({', '.join(calc.params)})" if calc else "—"), "arquivo": origem,
+             "linhas": len(source.splitlines()), "sha": hashlib.sha256(source.encode("utf-8")).hexdigest()[:16]}
+
+
+def _gerar_pdf():
+    return relpdf.pdf_ou_erro(_blocos_pdf, _meta_pdf)
+
+
+slot_pdf.markdown("**Relatório em PDF**")
+if relpdf is None:
+    slot_pdf.caption("PDF indisponível: a biblioteca reportlab não está instalada (veja o requirements.txt).")
+    _args_pdf = None
+else:
+    slot_pdf.caption("Todas as abas em um único arquivo, com as tabelas completas.")
+_args_pdf = _args_pdf if relpdf is None else dict(label="⬇️ Baixar PDF de todas as abas", file_name="TestingStudio_Web_relatorio.pdf", mime="application/pdf",
+                 help="Gera um PDF com o conteúdo de todas as abas (fonte, módulos 1 a 4).", key="baixar_pdf")
+if _args_pdf is not None:
+    try:
+        slot_pdf.download_button(data=_gerar_pdf, on_click="ignore", **_args_pdf)
+    except Exception:                                                      # noqa: BLE001
+        # Streamlit sem suporte a geração sob demanda: gera o PDF a cada execução
+        slot_pdf.download_button(data=_gerar_pdf(), **_args_pdf)
